@@ -1,128 +1,167 @@
-import os
-import tempfile
-import zipfile
-import geopandas as gpd
-import requests
-import streamlit as st
-from typing import Tuple
-from google.cloud import storage
-import s2sphere
-import pandas as pd
+// ------------------ CHARGEMENT DES BÂTIMENTS ------------------
+var buildings = ee.FeatureCollection('GOOGLE/Research/open-buildings/v3/polygons');
 
-# Constants
-BUILDING_DOWNLOAD_PATH = ('gs://open-buildings-data/v3/'
-                          'polygons_s2_level_6_gzip_no_header')
-data_type = 'polygons'  # Default data type
+var zoneDInteret;
+var batimentsZone, precision_065_070, precision_070_075, precision_075_plus;
 
-# Load countries.geojson
-@st.cache_data
-def load_countries():
-    url = "https://raw.githubusercontent.com/pratisig/Openbuildings/d1fdfcff0a004f154c92db6a32362a55ed8384d0/countries.geojson"
-    return gpd.read_file(url)
+// ------------------ INTERFACE ------------------
+var panel = ui.Panel({style: {width: '350px'}});
+ui.root.insert(0, panel);
 
-# Function to get filename and region dataframe
-def get_filename_and_region_dataframe(
-    region_border_source: str, region: str, your_own_wkt_polygon: str = None
-) -> Tuple[str, gpd.GeoDataFrame]:
-    """Returns output filename and a GeoDataFrame with one region row."""
-    if your_own_wkt_polygon:
-        filename = f'open_buildings_v3_{data_type}_your_own_wkt_polygon'
-        region_df = gpd.GeoDataFrame(
-            geometry=gpd.GeoSeries.from_wkt([your_own_wkt_polygon]),
-            crs='EPSG:4326'
-        )
-        if not isinstance(region_df.iloc[0].geometry, (shapely.geometry.Polygon, shapely.geometry.MultiPolygon)):
-            raise ValueError("`your_own_wkt_polygon` must be a POLYGON or MULTIPOLYGON.")
-        return filename, region_df
+panel.add(ui.Label('🧱 Application de visualisation des bâtiments', {
+  fontWeight: 'bold',
+  fontSize: '18px'
+}));
+panel.add(ui.Label('📐 Dessinez une zone d’intérêt (rectangle ou polygone) sur la carte.'));
 
-    if not region:
-        raise ValueError('Please select a region or set your_own_wkt_polygon.')
+var messageLabel = ui.Label('', {color: 'red'});
+panel.add(messageLabel);
 
-    # Load the selected region from the countries.geojson file
-    countries_gdf = load_countries()
-    region_iso_a3 = region.split(' ')[0]
-    region_df = countries_gdf[countries_gdf['ISO_A3'] == region_iso_a3]
+function afficherMessage(msg, color) {
+  messageLabel.setValue(msg);
+  messageLabel.style().set('color', color || 'red');
+}
 
-    if region_df.empty:
-        raise ValueError(f"Region '{region}' not found in the dataset.")
+// Activer l’outil de dessin
+var drawingTools = Map.drawingTools();
+drawingTools.setShown(true);
+drawingTools.setDrawModes(['polygon', 'rectangle']);
+function resetDrawing() {
+  drawingTools.layers().forEach(function(layer) {
+    drawingTools.layers().remove(layer);
+  });
+  drawingTools.setShape(null);
+}
+resetDrawing();
 
-    filename = f'open_buildings_v3_{data_type}_{region_iso_a3}'
-    return filename, region_df.dissolve(by='ISO_A3')[['geometry']]
+// --------- Bouton d’application du dessin ---------
+var drawButton = ui.Button({
+  label: '✅ Appliquer la zone dessinée',
+  onClick: function() {
+    if (drawingTools.layers().length() === 0) {
+      afficherMessage('❗ Veuillez dessiner une zone d’intérêt.', 'red');
+      return;
+    }
 
-# Download building data
-def download_building_data(region_df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Downloads and filters building data for the given region."""
-    storage_client = storage.Client.create_anonymous_client()
-    bucket_name = 'open-buildings-data'
-    bucket = storage_client.bucket(bucket_name)
+    var geom = drawingTools.layers().get(0).getEeObject();
+    zoneDInteret = ee.FeatureCollection(ee.Feature(geom));
+    afficherMessage('✅ Zone d’intérêt appliquée.', 'green');
+    actualiserAnalyse();
+  }
+});
+panel.add(drawButton);
 
-    # Get S2 covering tokens for the region
-    region_bounds = region_df.total_bounds
-    s2_lat_lng_rect = s2sphere.LatLngRect.from_point_pair(
-        s2sphere.LatLng.from_degrees(region_bounds[1], region_bounds[0]),
-        s2sphere.LatLng.from_degrees(region_bounds[3], region_bounds[2])
-    )
-    coverer = s2sphere.RegionCoverer()
-    coverer.min_level = 6
-    coverer.max_level = 6
-    coverer.max_cells = 1000
-    s2_tokens = [cell.to_token() for cell in coverer.get_covering(s2_lat_lng_rect)]
+// --------- Export : Choix de la collection ---------
+panel.add(ui.Label('📦 Choisir la collection à exporter :'));
+var collectionSelector = ui.Select({
+  items: [
+    'Tous les bâtiments',
+    'Bâtiments de la zone',
+    'Précision >= 0.65 & < 0.7',
+    'Précision >= 0.7 & < 0.75',
+    'Précision >= 0.75'
+  ],
+  placeholder: 'Choisir...'
+});
+panel.add(collectionSelector);
 
-    building_data_list = []
-    for token in s2_tokens:
-        blob_name = f'{data_type}_s2_level_6_gzip_no_header/{token}_buildings.csv.gz'
-        blob = bucket.blob(blob_name)
-        if not blob.exists():
-            continue
+// --------- Export : Choix du format ---------
+panel.add(ui.Label('🗂️ Format d’exportation :'));
+var formatSelector = ui.Select({
+  items: ['SHP', 'CSV', 'GeoJSON'],
+  placeholder: 'Choisir...'
+});
+panel.add(formatSelector);
 
-        with tempfile.NamedTemporaryFile(suffix='.csv.gz', delete=False) as tmp_file:
-            blob.download_to_filename(tmp_file.name)
-            df = pd.read_csv(tmp_file.name, compression='gzip', header=None, names=['latitude', 'longitude', 'area_in_meters', 'confidence'])
-            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df['longitude'], df['latitude']), crs='EPSG:4326')
-            filtered_gdf = gpd.sjoin(gdf, region_df, predicate='within')
-            building_data_list.append(filtered_gdf)
+// --------- Export : Nom du dossier Drive ---------
+panel.add(ui.Label('📁 Nom du dossier Drive :'));
+var folderInput = ui.Textbox({placeholder: 'ex: GEE_exports'});
+panel.add(folderInput);
 
-    if not building_data_list:
-        raise ValueError("No buildings found in the specified region.")
-    return pd.concat(building_data_list, ignore_index=True)
+// --------- Export : Bouton ---------
+var exportButton = ui.Button({
+  label: '📤 Exporter la collection',
+  onClick: function() {
+    if (!zoneDInteret) {
+      afficherMessage('❗ Dessinez une zone d’intérêt avant d’exporter.', 'red');
+      return;
+    }
 
-# Streamlit Interface
-st.title("Open Buildings Data Downloader")
+    var choix = collectionSelector.getValue();
+    var format = formatSelector.getValue();
+    var folder = folderInput.getValue() || 'GEE_exports';
 
-# Load countries
-countries_gdf = load_countries()
+    if (!choix || !format) {
+      afficherMessage('❗ Veuillez choisir une collection et un format.', 'red');
+      return;
+    }
 
-# Region selection
-region_border_source = st.selectbox(
-    "Select Border Source:",
-    ["Natural Earth (Low Res 110m)", "Natural Earth (High Res 10m)", "World Bank (High Res 10m)"]
-)
-regions = ["", "ABW (Aruba)", "AGO (Angola)", "AIA (Anguilla)", "ARG (Argentina)", \
-           "ATG (Antigua and Barbuda)", "BDI (Burundi)", "BEN (Benin)", "BFA (Burkina Faso)", \
-           "BGD (Bangladesh)", "BHS (The Bahamas)", "BLM (Saint Barthelemy)", "BLZ (Belize)", \
-           "BOL (Bolivia)", "BRA (Brazil)", "BRB (Barbados)", "BRN (Brunei)", "BTN (Bhutan)", \
-           "BWA (Botswana)", "CAF (Central African Republic)", "CHL (Chile)", "CIV (Ivory Coast)", \
-           "CMR (Cameroon)", "COD (Democratic Republic of the Congo)", "COG (Republic of Congo)", \
-           "COL (Colombia)", "COM (Comoros)", "CPV (Cape Verde)", "CRI (Costa Rica)", "CUB (Cuba)", \
-           "CUW (Curaçao)", "CYM (Cayman Islands)", "DJI (Djibouti)", "DMA (Dominica)", \
-           "DOM (Dominican Republic)", "DZA (Algeria)", "ECU (Ecuador)", "EGY (Egypt)", \
-           "ERI (Eritrea)", "ETH (Ethiopia)", "FLK (Falkland Islands)", "GAB (Gabon)", \
-           "GHA (Ghana)", "GIN (Guinea)", "GMB (Gambia)", "GNB (Guinea Bissau)", \
-           "GNQ (Equatorial Guinea)", "GRD (Grenada)", "GTM (Guatemala)", "GUY (Guyana)", \
-           "HND (Honduras)", "HTI (Haiti)", "IDN (Indonesia)", "IND (India)", \
-           "IOT (British Indian Ocean Territory)", "JAM (Jamaica)", "KEN (Kenya)", \
-           "KHM (Cambodia)", "KNA (Saint Kitts and Nevis)", "LAO (Laos)", "LBR (Liberia)", \
-           "LCA (Saint Lucia)", "LKA (Sri Lanka)", "LSO (Lesotho)", "MAF (Saint Martin)", \
-           "MDG (Madagascar)", "MDV (Maldives)", "MEX (Mexico)", "MOZ (Mozambique)", \
-           "MRT (Mauritania)", "MSR (Montserrat)", "MUS (Mauritius)", "MWI (Malawi)", \
-           "MYS (Malaysia)", "MYT (Mayotte)", "NAM (Namibia)", "NER (Niger)", "NGA (Nigeria)", \
-           "NIC (Nicaragua)", "NPL (Nepal)", "PAN (Panama)", "PER (Peru)", "PHL (Philippines)", \
-           "PRI (Puerto Rico)", "PRY (Paraguay)", "RWA (Rwanda)", "SDN (Sudan)", "SEN (Senegal)", \
-           "SGP (Singapore)", "SHN (Saint Helena)", "SLE (Sierra Leone)", "SLV (El Salvador)", \
-           "SOM (Somalia)", "STP (Sao Tome and Principe)", "SUR (Suriname)", "SWZ (Eswatini)", \
-           "SXM (Sint Maarten)", "SYC (Seychelles)", "TCA (Turks and Caicos Islands)", \
-           "TGO (Togo)", "THA (Thailand)", "TLS (East Timor)", "TTO (Trinidad and Tobago)", \
-           "TUN (Tunisia)", "TZA (United Republic of Tanzania)", "UGA (Uganda)", "URY (Uruguay)", \
-           "VCT (Saint Vincent and the Grenadines)", "VEN (Venezuela)", "VGB (British Virgin Islands)", \
-           "VIR (United States Virgin Islands)", "VNM (Vietnam)", "ZAF (South Africa)", \
-           "ZMB (Zambia)", "ZWE (Zimbabwe)"]
+    var toExport;
+    if (choix === 'Tous les bâtiments') toExport = buildings;
+    else if (choix === 'Bâtiments de la zone') toExport = batimentsZone;
+    else if (choix === 'Précision >= 0.65 & < 0.7') toExport = precision_065_070;
+    else if (choix === 'Précision >= 0.7 & < 0.75') toExport = precision_070_075;
+    else if (choix === 'Précision >= 0.75') toExport = precision_075_plus;
+
+    var clean = toExport.map(function(f) {
+      return f.select(f.propertyNames().remove('longitude_latitude'));
+    });
+
+    Export.table.toDrive({
+      collection: clean,
+      description: 'export_selection',
+      fileFormat: format,
+      folder: folder,
+      fileNamePrefix: 'export_selection'
+    });
+
+    afficherMessage('✅ Export prêt. Cliquez sur "Tasks" en haut à droite, puis sur "Run".', 'green');
+  }
+});
+panel.add(exportButton);
+
+// --------- Sauvegarder la zone dans les Assets ---------
+panel.add(ui.Label('💾 Enregistrer la zone d’intérêt dans vos Assets :'));
+var assetNameInput = ui.Textbox({placeholder: 'ex: users/votre_nom/zone_ikongo'});
+panel.add(assetNameInput);
+
+var saveAssetButton = ui.Button({
+  label: '💽 Sauvegarder la zone',
+  onClick: function() {
+    var assetName = assetNameInput.getValue();
+    if (!assetName || !zoneDInteret) {
+      afficherMessage('❗ Dessinez une zone et entrez un nom valide pour l’asset.', 'red');
+      return;
+    }
+
+    Export.table.toAsset({
+      collection: zoneDInteret,
+      description: 'export_zone_interet',
+      assetId: assetName
+    });
+
+    afficherMessage('✅ Export vers les Assets lancé. Cliquez sur "Tasks" > "Run".', 'green');
+  }
+});
+panel.add(saveAssetButton);
+
+// --------- Visualisation initiale des bâtiments ---------
+function actualiserAnalyse() {
+  Map.clear();
+
+  batimentsZone = buildings.filterBounds(zoneDInteret);
+  precision_065_070 = batimentsZone.filter('confidence >= 0.65 && confidence < 0.7');
+  precision_070_075 = batimentsZone.filter('confidence >= 0.7 && confidence < 0.75');
+  precision_075_plus = batimentsZone.filter('confidence >= 0.75');
+
+  Map.addLayer(zoneDInteret, {color: 'blue'}, 'Zone d’intérêt');
+  Map.addLayer(precision_065_070, {color: 'FF0000'}, 'Précision [0.65–0.7)');
+  Map.addLayer(precision_070_075, {color: 'FFFF00'}, 'Précision [0.7–0.75)');
+  Map.addLayer(precision_075_plus, {color: '00FF00'}, 'Précision ≥ 0.75');
+  Map.centerObject(zoneDInteret, 10);
+}
+
+// --------- Carte initiale ---------
+Map.setOptions('SATELLITE');
+Map.addLayer(buildings.limit(1000), {color: '0000FF'}, 'Bâtiments globaux (extrait)');
+Map.setCenter(30, 0, 3);
