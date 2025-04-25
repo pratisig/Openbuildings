@@ -10,9 +10,6 @@ import shapely
 import tensorflow as tf
 import tqdm.notebook
 
-# Install required dependencies
-!sudo apt-get install swig
-!pip install s2geometry pygeos geopandas
 
 # Constants
 BUILDING_DOWNLOAD_PATH = ('gs://open-buildings-data/v3/'
