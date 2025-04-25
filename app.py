@@ -1,3 +1,4 @@
+import requests
 import streamlit as st
 import geopandas as gpd
 import shapely
