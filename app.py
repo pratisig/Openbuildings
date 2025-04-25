@@ -1,6 +1,60 @@
-import geopandas as gpd
 import streamlit as st
+import geopandas as gpd
+import folium
+import ee
 import os
+from folium import plugins
+from io import BytesIO
+
+# Initialiser Google Earth Engine (GEE)
+ee.Initialize()
+
+# Fonction pour récupérer les données Open Buildings depuis GEE
+def get_open_buildings_data(region_df):
+    # Définir la zone d'intérêt (bbox de la région)
+    bounds = region_df.geometry.bounds
+    minx, miny, maxx, maxy = bounds.values[0]
+    
+    # Créer une zone d'intérêt en utilisant les coordonnées de la région
+    roi = ee.Geometry.Rectangle([minx, miny, maxx, maxy])
+    
+    # Charger les données Open Buildings v3 depuis GEE
+    buildings = ee.FeatureCollection('GOOGLE/Research/open-buildings/v3/polygons')
+    
+    # Filtrer les bâtiments dans la zone d'intérêt (roi)
+    buildings_in_region = buildings.filterBounds(roi)
+    
+    return buildings_in_region
+
+# Fonction pour sauvegarder les données au format GeoJSON
+def save_to_geojson_or_shp(gdf, filename, output_format):
+    """Sauvegarde un GeoDataFrame au format GeoJSON ou Shapefile."""
+    if output_format == "geojson":
+        gdf.to_file(filename, driver="GeoJSON")
+    elif output_format == "shp":
+        # Le Shapefile doit être compressé en ZIP
+        gdf.to_file(filename.replace(".shp", ".zip"), driver="ESRI Shapefile")
+
+# Fonction pour créer une carte avec les bâtiments extraits
+def create_map(region_df, buildings):
+    # Créer une carte centrée sur la région
+    bounds = region_df.geometry.bounds
+    minx, miny, maxx, maxy = bounds.values[0]
+    m = folium.Map(location=[(miny + maxy) / 2, (minx + maxx) / 2], zoom_start=10)
+    
+    # Ajouter la zone d'intérêt à la carte
+    folium.GeoJson(region_df).add_to(m)
+    
+    # Convertir les bâtiments extraits de GEE en GeoJSON
+    buildings_geojson = buildings.getInfo()
+    
+    # Ajouter les bâtiments à la carte
+    folium.GeoJson(buildings_geojson, name="Bâtiments").add_to(m)
+    
+    # Ajouter un contrôle de couche
+    folium.LayerControl().add_to(m)
+    
+    return m
 
 # Configuration de l'application Streamlit
 st.title("Télécharger des données Open Buildings")
@@ -74,16 +128,16 @@ if st.button("Télécharger"):
     try:
         filename, region_df = get_filename_and_region_dataframe(region_border_source, region, your_own_wkt_polygon)
 
-        # Logique pour générer les fichiers GeoJSON ou Shapefile
-        def save_to_geojson_or_shp(gdf, filename, output_format):
-            """Sauvegarde un GeoDataFrame au format GeoJSON ou Shapefile."""
-            if output_format == "geojson":
-                gdf.to_file(filename, driver="GeoJSON")
-            elif output_format == "shp":
-                # Le Shapefile doit être compressé en ZIP
-                gdf.to_file(filename.replace(".shp", ".zip"), driver="ESRI Shapefile")
+        # Récupérer les données Open Buildings depuis GEE
+        buildings = get_open_buildings_data(region_df)
 
-        # Exemple de génération et sauvegarde des données
+        # Créer la carte avec les bâtiments
+        map_ = create_map(region_df, buildings)
+        
+        # Afficher la carte dans Streamlit
+        folium_static(map_)
+        
+        # Logique pour générer et sauvegarder les fichiers GeoJSON ou Shapefile
         save_to_geojson_or_shp(region_df, filename, output_format)
 
         # Simuler le téléchargement du fichier
