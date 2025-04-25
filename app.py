@@ -5,11 +5,21 @@ import geopandas as gpd
 import requests
 import streamlit as st
 from typing import Tuple
+from google.cloud import storage
+import s2sphere
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
 
 # Constants
 BUILDING_DOWNLOAD_PATH = ('gs://open-buildings-data/v3/'
                           'building_data_s2_level_6_gzip_no_header')
 data_type = 'polygons'  # Default data type
+
+# Load countries.geojson
+@st.cache_data
+def load_countries():
+    return gpd.read_file("countries.geojson")
 
 # Function to get filename and region dataframe
 def get_filename_and_region_dataframe(
@@ -59,15 +69,9 @@ def get_filename_and_region_dataframe(
         f'ISO_A3 == "{region_iso_a3}"').dissolve(by='ISO_A3')[['geometry']]
     return filename, region_df
 
-
-# Function to download building data
+# Download building data
 def download_building_data(region_df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Downloads and filters building data for the given region."""
-    from google.cloud import storage
-    import s2sphere
-    import pandas as pd
-
-    # Initialize Google Cloud Storage client
     storage_client = storage.Client.create_anonymous_client()
     bucket_name = 'open-buildings-data'
     bucket = storage_client.bucket(bucket_name)
@@ -84,7 +88,6 @@ def download_building_data(region_df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     coverer.max_cells = 1000
     s2_tokens = [cell.to_token() for cell in coverer.get_covering(s2_lat_lng_rect)]
 
-    # Download and filter building data
     building_data_list = []
     for token in s2_tokens:
         blob_name = f'{data_type}_s2_level_6_gzip_no_header/{token}_buildings.csv.gz'
@@ -103,9 +106,11 @@ def download_building_data(region_df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         raise ValueError("No buildings found in the specified region.")
     return pd.concat(building_data_list, ignore_index=True)
 
-
 # Streamlit Interface
 st.title("Open Buildings Data Downloader")
+
+# Load countries
+countries_gdf = load_countries()
 
 # Region selection
 region_border_source = st.selectbox(
@@ -150,6 +155,26 @@ your_own_wkt_polygon = st.text_area("Or specify an area of interest in WKT forma
 
 # Output format selection
 output_format = st.selectbox("Select Output Format:", ["GeoJSON", "Shapefile"])
+
+# Interactive map
+st.subheader("Interactive Map")
+map_center = [0, 0] if not region else countries_gdf[countries_gdf['ISO_A3'] == region.split(' ')[0]].centroid.iloc[0].coords[0][::-1]
+m = folium.Map(location=map_center, zoom_start=6)
+
+# Add country boundaries to the map
+folium.GeoJson(countries_gdf).add_to(m)
+
+# Draw a polygon on the map
+draw = folium.plugins.Draw(export=True)
+draw.add_to(m)
+
+# Display the map
+map_result = st_folium(m, height=500, width=700)
+
+# Extract drawn polygon
+if map_result.get("last_active_drawing"):
+    drawn_polygon = map_result["last_active_drawing"]["geometry"]
+    your_own_wkt_polygon = shapely.wkt.dumps(shapely.geometry.shape(drawn_polygon))
 
 # Download button
 if st.button("Download Data"):
