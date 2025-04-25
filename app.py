@@ -64,6 +64,9 @@ def get_filename_and_region_dataframe(region_border_source: str, region: str,
                 break
         
         if shapefile_path is None:
+            # Inspect the contents of the zip file directly to see if it's in subfolders
+            with zipfile.ZipFile('wb_countries_admin0_10m.zip', 'r') as zip_ref:
+                zip_ref.printdir()  # This will print the content of the ZIP file
             raise FileNotFoundError("Shapefile (.shp) not found in the extracted files.")
         
         region_shapefile_path = shapefile_path
