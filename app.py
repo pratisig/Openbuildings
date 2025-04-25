@@ -75,4 +75,52 @@ def download_building_data(region_df: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if not blob.exists():
             continue
 
-        with tempfile.NamedTemporaryFile(suffix='.csv.gz', delete=False)
+        with tempfile.NamedTemporaryFile(suffix='.csv.gz', delete=False) as tmp_file:
+            blob.download_to_filename(tmp_file.name)
+            df = pd.read_csv(tmp_file.name, compression='gzip', header=None, names=['latitude', 'longitude', 'area_in_meters', 'confidence'])
+            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df['longitude'], df['latitude']), crs='EPSG:4326')
+            filtered_gdf = gpd.sjoin(gdf, region_df, predicate='within')
+            building_data_list.append(filtered_gdf)
+
+    if not building_data_list:
+        raise ValueError("No buildings found in the specified region.")
+    return pd.concat(building_data_list, ignore_index=True)
+
+# Streamlit Interface
+st.title("Open Buildings Data Downloader")
+
+# Load countries
+countries_gdf = load_countries()
+
+# Region selection
+region_border_source = st.selectbox(
+    "Select Border Source:",
+    ["Natural Earth (Low Res 110m)", "Natural Earth (High Res 10m)", "World Bank (High Res 10m)"]
+)
+regions = [
+    "", "ABW (Aruba)", "AGO (Angola)", "AIA (Anguilla)", "ARG (Argentina)",
+    "ATG (Antigua and Barbuda)", "BDI (Burundi)", "BEN (Benin)", "BFA (Burkina Faso)",
+    "BGD (Bangladesh)", "BHS (The Bahamas)", "BLM (Saint Barthelemy)", "BLZ (Belize)",
+    "BOL (Bolivia)", "BRA (Brazil)", "BRB (Barbados)", "BRN (Brunei)", "BTN (Bhutan)",
+    "BWA (Botswana)", "CAF (Central African Republic)", "CHL (Chile)", "CIV (Ivory Coast)",
+    "CMR (Cameroon)", "COD (Democratic Republic of the Congo)", "COG (Republic of Congo)",
+    "COL (Colombia)", "COM (Comoros)", "CPV (Cape Verde)", "CRI (Costa Rica)", "CUB (Cuba)",
+    "CUW (Curaçao)", "CYM (Cayman Islands)", "DJI (Djibouti)", "DMA (Dominica)",
+    "DOM (Dominican Republic)", "DZA (Algeria)", "ECU (Ecuador)", "EGY (Egypt)",
+    "ERI (Eritrea)", "ETH (Ethiopia)", "FLK (Falkland Islands)", "GAB (Gabon)",
+    "GHA (Ghana)", "GIN (Guinea)", "GMB (Gambia)", "GNB (Guinea Bissau)",
+    "GNQ (Equatorial Guinea)", "GRD (Grenada)", "GTM (Guatemala)", "GUY (Guyana)",
+    "HND (Honduras)", "HTI (Haiti)", "IDN (Indonesia)", "IND (India)",
+    "IOT (British Indian Ocean Territory)", "JAM (Jamaica)", "KEN (Kenya)",
+    "KHM (Cambodia)", "KNA (Saint Kitts and Nevis)", "LAO (Laos)", "LBR (Liberia)",
+    "LCA (Saint Lucia)", "LKA (Sri Lanka)", "LSO (Lesotho)", "MAF (Saint Martin)",
+    "MDG (Madagascar)", "MDV (Maldives)", "MEX (Mexico)", "MOZ (Mozambique)",
+    "MRT (Mauritania)", "MSR (Montserrat)", "MUS (Mauritius)", "MWI (Malawi)",
+    "MYS (Malaysia)", "MYT (Mayotte)", "NAM (Namibia)", "NER (Niger)", "NGA (Nigeria)",
+    "NIC (Nicaragua)", "NPL (Nepal)", "PAN (Panama)", "PER (Peru)", "PHL (Philippines)",
+    "PRI (Puerto Rico)", "PRY (Paraguay)", "RWA (Rwanda)", "SDN (Sudan)", "SEN (Senegal)",
+    "SGP (Singapore)", "SHN (Saint Helena)", "SLE (Sierra Leone)", "SLV (El Salvador)",
+    "SOM (Somalia)", "STP (Sao Tome and Principe)", "SUR (Suriname)", "SWZ (Eswatini)",
+    "SXM (Sint Maarten)", "SYC (Seychelles)", "TCA (Turks and Caicos Islands)",
+    "TGO (Togo)", "THA (Thailand)", "TLS (East Timor)", "TTO (Trinidad and Tobago)",
+    "TUN (Tunisia)", "TZA (United Republic of Tanzania)", "UGA (Uganda)", "URY
