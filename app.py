@@ -6,9 +6,23 @@ import os
 from folium import plugins
 from io import BytesIO
 
-# Initialiser Google Earth Engine (GEE)
-ee.Initialize()
+# Récupérez les secrets de la clé d'API
+google_credentials = st.secrets["google_application_credentials"]
 
+# Écrire la clé dans un fichier JSON temporaire
+credentials_path = "google_credentials.json"
+with open(credentials_path, "w") as f:
+    f.write(google_credentials)
+
+# Définir la variable d'environnement pour Google Earth Engine
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
+
+# Initialisez Google Earth Engine
+try:
+    ee.Initialize()
+    st.write("Earth Engine a été initialisé avec succès!")
+except Exception as e:
+    st.write(f"Erreur lors de l'initialisation de GEE : {e}")
 # Fonction pour récupérer les données Open Buildings depuis GEE
 def get_open_buildings_data(region_df):
     # Définir la zone d'intérêt (bbox de la région)
