@@ -1,59 +1,105 @@
 import streamlit as st
 import geopandas as gpd
-from shapely.geometry import Polygon
+import pandas as pd
+import shapely.wkt
+from shapely.geometry import shape
+import io
 import tempfile
-from shapely import wkt
 import os
+import zipfile
+import requests
+import json
+from streamlit_folium import st_folium
+import folium
+from folium.plugins import Draw
+from s2sphere import RegionCoverer, LatLng, Cap, CellId
 
-st.set_page_config(page_title="Open Buildings Downloader")
+st.set_page_config(page_title="Téléchargement Open Buildings", layout="wide")
+st.title("📦 Télécharger des données de bâtiments (Google Open Buildings)")
 
-st.title("Télécharger des données Open Buildings")
-st.markdown("Choisissez une région ou spécifiez un polygone WKT pour générer un fichier spatial.")
+# --- ZONE DE SELECTION ---
+st.sidebar.header("Méthode de sélection")
+mode = st.sidebar.radio("Choisir la zone", ["📍 Choisir un pays", "✏️ Dessiner un polygone"])
 
-regions = ["", "SEN (Senegal)", "CMR (Cameroon)", "COD (DR Congo)", "CAF (CAR)"]
-region = st.selectbox("Région", regions)
-your_own_wkt_polygon = st.text_area("Ou spécifiez un polygone WKT (EPSG:4326)", "")
-data_type = st.selectbox("Type de données", ["polygons", "points"])
-output_format = st.selectbox("Format de sortie", ["geojson", "shp"])
+geometry = None
 
-def get_filename_and_geometry(region, wkt_text):
-    if wkt_text:
-        try:
-            geom = wkt.loads(wkt_text)
-        except Exception:
-            raise ValueError("Le WKT spécifié est invalide.")
-        filename = f'open_buildings_{data_type}_custom.{output_format}'
-        region_df = gpd.GeoDataFrame(geometry=[geom], crs='EPSG:4326')
-        return filename, region_df
-    elif region:
-        st.warning("Les régions prédéfinies ne sont pas encore connectées à un shapefile.")
-        return None, None
-    else:
-        raise ValueError("Veuillez spécifier une région ou un polygone WKT.")
+if mode == "📍 Choisir un pays":
+    world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
+    countries = world["name"].sort_values().tolist()
+    selected_country = st.sidebar.selectbox("Pays", countries)
+    geometry = world[world["name"] == selected_country].geometry.values[0]
 
-def save_file(gdf, filename, output_format):
-    if output_format == "geojson":
-        gdf.to_file(filename, driver="GeoJSON")
-    elif output_format == "shp":
-        temp_dir = tempfile.mkdtemp()
-        shp_path = os.path.join(temp_dir, "output.shp")
-        gdf.to_file(shp_path, driver="ESRI Shapefile")
-        shutil.make_archive(filename.replace(".shp", ""), 'zip', temp_dir)
-        return filename.replace(".shp", ".zip")
-    return filename
+else:
+    st.sidebar.info("Tracez un polygone sur la carte ci-dessous")
+    m = folium.Map(location=[0, 0], zoom_start=2)
+    draw = Draw(export=True, filename='drawn.geojson')
+    draw.add_to(m)
+    result = st_folium(m, width=700, height=500)
+    geojson = result.get("last_active_drawing")
+    if geojson:
+        geometry = shape(geojson["geometry"])
 
+# --- OPTIONS ---
+st.sidebar.header("Options de données")
+data_type = st.sidebar.selectbox("Type de données", ["polygons", "points"])
+export_format = st.sidebar.selectbox("Format de sortie", ["GeoJSON", "Shapefile"])
+
+# --- S2 COVERING ---
+def get_s2_covering(geom, level=13):
+    coverer = RegionCoverer()
+    coverer.min_level = level
+    coverer.max_level = level
+    bounds = geom.bounds
+    latlngs = [LatLng.from_degrees(bounds[1], bounds[0]), LatLng.from_degrees(bounds[3], bounds[2])]
+    cap = Cap.from_axis_angle(latlngs[0].to_point(), 0.5)
+    return [cell.id() for cell in coverer.get_covering(cap)]
+
+# --- TELECHARGEMENT DONNEES GOOGLE OPEN BUILDINGS ---
+def download_and_filter(geom, data_type="polygons"):
+    ids = get_s2_covering(geom)
+    gdf_all = []
+    for s2_id in ids:
+        url = f"https://storage.googleapis.com/open-buildings-data/v2/{data_type}_s2_level_13/{s2_id}.csv.gz"
+        r = requests.get(url)
+        if r.status_code != 200:
+            continue
+        df = pd.read_csv(io.BytesIO(r.content), compression="gzip")
+        if data_type == "polygons":
+            df["geometry"] = df["geometry"].apply(shapely.wkt.loads)
+        else:
+            df["geometry"] = df.apply(lambda row: shapely.geometry.Point(row["longitude"], row["latitude"]), axis=1)
+        gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
+        gdf_all.append(gdf[gdf.intersects(geom)])
+    if not gdf_all:
+        return None
+    return pd.concat(gdf_all)
+
+# --- BOUTON TELECHARGER ---
 if st.button("Télécharger"):
-    try:
-        filename, gdf = get_filename_and_geometry(region, your_own_wkt_polygon)
-        if gdf is not None:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f".{output_format}")
-            final_path = save_file(gdf, temp_file.name, output_format)
-            with open(final_path, "rb") as file:
-                st.download_button(
-                    label="Télécharger le fichier",
-                    data=file,
-                    file_name=os.path.basename(final_path),
-                    mime="application/zip" if output_format == "shp" else "application/json"
-                )
-    except Exception as e:
-        st.error(f"Erreur : {e}")
+    if not geometry:
+        st.error("Veuillez choisir ou dessiner une zone.")
+    else:
+        gdf = download_and_filter(geometry, data_type)
+        if gdf is None or gdf.empty:
+            st.warning("Aucune donnée disponible pour cette zone.")
+        else:
+            if export_format == "GeoJSON":
+                geojson = gdf.to_json()
+                st.download_button("Télécharger GeoJSON", geojson.encode(), "buildings.geojson", "application/json")
+            else:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    shp_path = os.path.join(tmpdir, "buildings.shp")
+                    gdf.to_file(shp_path)
+                    zip_path = os.path.join(tmpdir, "buildings.zip")
+                    with zipfile.ZipFile(zip_path, "w") as zf:
+                        for ext in [".shp", ".shx", ".dbf", ".prj", ".cpg"]:
+                            file = shp_path.replace(".shp", ext)
+                            if os.path.exists(file):
+                                zf.write(file, arcname=os.path.basename(file))
+                    with open(zip_path, "rb") as f:
+                        st.download_button("Télécharger Shapefile (ZIP)", f.read(), "buildings.zip", "application/zip")
+
+# --- INFO ---
+st.markdown(\"\"\"\n---\n**📌 Source des données :** [Google Open Buildings Dataset](https://sites.research.google/open-buildings/#download)  
+\"\"\")
+
