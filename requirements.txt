@@ -1,0 +1,5 @@
+streamlit
+geopandas
+s2geometry
+tensorflow
+pandas
