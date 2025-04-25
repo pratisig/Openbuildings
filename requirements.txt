@@ -1,7 +1,8 @@
-streamlit==1.44.1
-geopandas==1.0.1
-pandas==2.2.3
-rich
+streamlit
+pandas
+geopandas
+shapely
 folium
 streamlit-folium
-shapely
+requests
+s2sphere
