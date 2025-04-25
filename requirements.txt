@@ -4,3 +4,4 @@ shapely
 pandas
 google-cloud-storage
 s2sphere
+swig
