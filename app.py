@@ -1,167 +1,116 @@
 import streamlit as st
 import geopandas as gpd
-import folium
-import ee
+import shapely
+import zipfile
 import os
-from folium import plugins
-from io import BytesIO
+from typing import Tuple
 
-# Récupérez les secrets de la clé d'API
-google_credentials = st.secrets["google_application_credentials"]
+# Constants for the download path and data type
+BUILDING_DOWNLOAD_PATH = ('gs://open-buildings-data/v3/'
+                          'building_data_s2_level_6_gzip_no_header')
+data_type = 'building'  # Change this to match your data type
 
-# Écrire la clé dans un fichier JSON temporaire
-credentials_path = "google_credentials.json"
-with open(credentials_path, "w") as f:
-    f.write(google_credentials)
-
-# Définir la variable d'environnement pour Google Earth Engine
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
-
-# Initialisez Google Earth Engine
-try:
-    ee.Initialize()
-    st.write("Earth Engine a été initialisé avec succès!")
-except Exception as e:
-    st.write(f"Erreur lors de l'initialisation de GEE : {e}")
-# Fonction pour récupérer les données Open Buildings depuis GEE
-def get_open_buildings_data(region_df):
-    # Définir la zone d'intérêt (bbox de la région)
-    bounds = region_df.geometry.bounds
-    minx, miny, maxx, maxy = bounds.values[0]
+def get_filename_and_region_dataframe(region_border_source: str, region: str,
+                                      your_own_wkt_polygon: str = None) -> Tuple[str, gpd.GeoDataFrame]:
+    """Returns output filename and a geopandas dataframe with one region row."""
     
-    # Créer une zone d'intérêt en utilisant les coordonnées de la région
-    roi = ee.Geometry.Rectangle([minx, miny, maxx, maxy])
-    
-    # Charger les données Open Buildings v3 depuis GEE
-    buildings = ee.FeatureCollection('GOOGLE/Research/open-buildings/v3/polygons')
-    
-    # Filtrer les bâtiments dans la zone d'intérêt (roi)
-    buildings_in_region = buildings.filterBounds(roi)
-    
-    return buildings_in_region
-
-# Fonction pour sauvegarder les données au format GeoJSON
-def save_to_geojson_or_shp(gdf, filename, output_format):
-    """Sauvegarde un GeoDataFrame au format GeoJSON ou Shapefile."""
-    if output_format == "geojson":
-        gdf.to_file(filename, driver="GeoJSON")
-    elif output_format == "shp":
-        # Le Shapefile doit être compressé en ZIP
-        gdf.to_file(filename.replace(".shp", ".zip"), driver="ESRI Shapefile")
-
-# Fonction pour créer une carte avec les bâtiments extraits
-def create_map(region_df, buildings):
-    # Créer une carte centrée sur la région
-    bounds = region_df.geometry.bounds
-    minx, miny, maxx, maxy = bounds.values[0]
-    m = folium.Map(location=[(miny + maxy) / 2, (minx + maxx) / 2], zoom_start=10)
-    
-    # Ajouter la zone d'intérêt à la carte
-    folium.GeoJson(region_df).add_to(m)
-    
-    # Convertir les bâtiments extraits de GEE en GeoJSON
-    buildings_geojson = buildings.getInfo()
-    
-    # Ajouter les bâtiments à la carte
-    folium.GeoJson(buildings_geojson, name="Bâtiments").add_to(m)
-    
-    # Ajouter un contrôle de couche
-    folium.LayerControl().add_to(m)
-    
-    return m
-
-# Configuration de l'application Streamlit
-st.title("Télécharger des données Open Buildings")
-st.markdown("Choisissez une région ou spécifiez un polygone WKT pour télécharger les données au format GeoJSON ou Shapefile.")
-
-# Widgets pour les paramètres
-region_border_source = st.selectbox(
-    "Source des frontières régionales",
-    ["Natural Earth (Low Res 110m)", "Natural Earth (High Res 10m)", "World Bank (High Res 10m)"]
-)
-
-regions = [
-    "", "ABW (Aruba)", "AGO (Angola)", "AIA (Anguilla)", "ARG (Argentina)",
-    "ATG (Antigua and Barbuda)", "BDI (Burundi)", "BEN (Benin)", "BFA (Burkina Faso)",
-    "BGD (Bangladesh)", "BHS (The Bahamas)", "BLM (Saint Barthelemy)", "BLZ (Belize)",
-    "BOL (Bolivia)", "BRA (Brazil)", "BRB (Barbados)", "BRN (Brunei)", "BTN (Bhutan)",
-    "BWA (Botswana)", "CAF (Central African Republic)", "CHL (Chile)", "CIV (Ivory Coast)",
-    "CMR (Cameroon)", "COD (Democratic Republic of the Congo)", "COG (Republic of Congo)",
-    "COL (Colombia)", "COM (Comoros)", "CPV (Cape Verde)", "CRI (Costa Rica)", "CUB (Cuba)",
-    "CUW (Curaçao)", "CYM (Cayman Islands)", "DJI (Djibouti)", "DMA (Dominica)",
-    "DOM (Dominican Republic)", "DZA (Algeria)", "ECU (Ecuador)", "EGY (Egypt)",
-    "ERI (Eritrea)", "ETH (Ethiopia)", "FLK (Falkland Islands)", "GAB (Gabon)",
-    "GHA (Ghana)", "GIN (Guinea)", "GMB (Gambia)", "GNB (Guinea Bissau)",
-    "GNQ (Equatorial Guinea)", "GRD (Grenada)", "GTM (Guatemala)", "GUY (Guyana)",
-    "HND (Honduras)", "HTI (Haiti)", "IDN (Indonesia)", "IND (India)",
-    "IOT (British Indian Ocean Territory)", "JAM (Jamaica)", "KEN (Kenya)",
-    "KHM (Cambodia)", "KNA (Saint Kitts and Nevis)", "LAO (Laos)", "LBR (Liberia)",
-    "LCA (Saint Lucia)", "LKA (Sri Lanka)", "LSO (Lesotho)", "MAF (Saint Martin)",
-    "MDG (Madagascar)", "MDV (Maldives)", "MEX (Mexico)", "MOZ (Mozambique)",
-    "MRT (Mauritania)", "MSR (Montserrat)", "MUS (Mauritius)", "MWI (Malawi)",
-    "MYS (Malaysia)", "MYT (Mayotte)", "NAM (Namibia)", "NER (Niger)", "NGA (Nigeria)",
-    "NIC (Nicaragua)", "NPL (Nepal)", "PAN (Panama)", "PER (Peru)", "PHL (Philippines)",
-    "PRI (Puerto Rico)", "PRY (Paraguay)", "RWA (Rwanda)", "SDN (Sudan)", "SEN (Senegal)",
-    "SGP (Singapore)", "SHN (Saint Helena)", "SLE (Sierra Leone)", "SLV (El Salvador)",
-    "SOM (Somalia)", "STP (Sao Tome and Principe)", "SUR (Suriname)", "SWZ (Eswatini)",
-    "SXM (Sint Maarten)", "SYC (Seychelles)", "TCA (Turks and Caicos Islands)",
-    "TGO (Togo)", "THA (Thailand)", "TLS (East Timor)", "TTO (Trinidad and Tobago)",
-    "TUN (Tunisia)", "TZA (United Republic of Tanzania)", "UGA (Uganda)", "URY (Uruguay)",
-    "VCT (Saint Vincent and the Grenadines)", "VEN (Venezuela)", "VGB (British Virgin Islands)",
-    "VIR (United States Virgin Islands)", "VNM (Vietnam)", "ZAF (South Africa)",
-    "ZMB (Zambia)", "ZWE (Zimbabwe)"
-]
-
-region = st.selectbox("Région", regions)
-your_own_wkt_polygon = st.text_area("Ou spécifiez un polygone WKT (EPSG:4326)", "")
-data_type = st.selectbox("Type de données", ["polygons", "points"])
-output_format = st.selectbox("Format de sortie", ["geojson", "shp"])
-
-# Fonction pour préparer les données
-def get_filename_and_region_dataframe(region_border_source, region, your_own_wkt_polygon):
+    # If a custom WKT polygon is provided
     if your_own_wkt_polygon:
-        filename = f'open_buildings_v3_{data_type}_your_own_wkt_polygon.{output_format}'
+        filename = f'open_buildings_{data_type}_your_own_wkt_polygon.geojson'
         region_df = gpd.GeoDataFrame(
             geometry=gpd.GeoSeries.from_wkt([your_own_wkt_polygon]),
             crs='EPSG:4326')
+        
+        if not isinstance(region_df.iloc[0].geometry, (shapely.geometry.Polygon, shapely.geometry.MultiPolygon)):
+            raise ValueError("`your_own_wkt_polygon` must be a POLYGON or MULTIPOLYGON.")
+        
         return filename, region_df
+    
+    # If no WKT, select the region from predefined options
     if not region:
-        raise ValueError('Veuillez sélectionner une région ou spécifier un polygone WKT.')
-    # Charge le fichier GeoJSON des pays depuis le même répertoire que app.py
-    geojson_path = os.path.join(os.path.dirname(__file__), 'countries.geojson')
-    region_df = gpd.read_file(geojson_path)
+        raise ValueError('Please select a region or set your_own_wkt_polygon.')
     
-    # Filtrer la région sélectionnée
-    region_df = region_df[region_df['name'] == region]
+    # Define URL for downloading region shapefile based on source
+    if region_border_source == 'Natural Earth (Low Res 110m)':
+        url = 'https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip'
+        response = requests.get(url)
+        with open('ne_110m.zip', 'wb') as f:
+            f.write(response.content)
+        region_shapefile_path = 'ne_110m.zip'
+        source_name = 'ne_110m'
     
-    filename = f'open_buildings_v3_{data_type}_{region}.{output_format}'
+    elif region_border_source == 'Natural Earth (High Res 10m)':
+        url = 'https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip'
+        response = requests.get(url)
+        with open('ne_10m.zip', 'wb') as f:
+            f.write(response.content)
+        region_shapefile_path = 'ne_10m.zip'
+        source_name = 'ne_10m'
+    
+    elif region_border_source == 'World Bank (High Res 10m)':
+        url = 'https://datacatalogfiles.worldbank.org/ddh-published/0038272/DR0046659/wb_countries_admin0_10m.zip'
+        response = requests.get(url)
+        with open('wb_countries_admin0_10m.zip', 'wb') as f:
+            f.write(response.content)
+        with zipfile.ZipFile('wb_countries_admin0_10m.zip', 'r') as zip_ref:
+            zip_ref.extractall()
+        region_shapefile_path = 'WB_countries_Admin0_10m.shp'
+        source_name = 'wb_10m'
+
+    region_iso_a3 = region.split(' ')[0]
+    filename = f'open_buildings_{data_type}_{source_name}_{region_iso_a3}.geojson'
+
+    # Read shapefile and filter for the region
+    region_df = gpd.read_file(region_shapefile_path).query(
+        f'ISO_A3 == "{region_iso_a3}"').dissolve(by='ISO_A3')[['geometry']]
+    
     return filename, region_df
 
-# Bouton pour démarrer le téléchargement
-if st.button("Télécharger"):
+
+# Streamlit interface
+st.title("Open Buildings Data Downloader")
+
+# Load the countries.geojson file into a GeoDataFrame
+countries_gdf = gpd.read_file("countries.geojson")
+
+# List of country names (or ISO codes, depending on the data structure)
+country_list = countries_gdf['name'].tolist()  # Assuming the column is 'name', change if needed
+
+# Region selection dropdown
+region = st.selectbox('Select a Country:', country_list)
+
+# Region border source selection
+region_border_source = st.selectbox('Select Border Source:', 
+                                    ['Natural Earth (Low Res 110m)', 'Natural Earth (High Res 10m)', 'World Bank (High Res 10m)'])
+
+# Custom WKT polygon input
+wkt_polygon = st.text_area('Or enter your custom WKT polygon:', '')
+
+# Select data format
+output_format = st.selectbox("Select Output Format:", ["GeoJSON", "Shapefile"])
+
+# Button to download data
+if st.button('Download Data'):
     try:
-        filename, region_df = get_filename_and_region_dataframe(region_border_source, region, your_own_wkt_polygon)
-
-        # Récupérer les données Open Buildings depuis GEE
-        buildings = get_open_buildings_data(region_df)
-
-        # Créer la carte avec les bâtiments
-        map_ = create_map(region_df, buildings)
+        # Fetch the data based on region or WKT polygon
+        filename, region_df = get_filename_and_region_dataframe(region_border_source, region, wkt_polygon)
         
-        # Afficher la carte dans Streamlit
-        folium_static(map_)
+        # Save the file to GeoJSON or Shapefile
+        if output_format == "GeoJSON":
+            region_df.to_file(filename, driver='GeoJSON')
+            st.download_button('Download GeoJSON', data=open(filename, 'rb'), file_name=filename, mime="application/geo+json")
         
-        # Logique pour générer et sauvegarder les fichiers GeoJSON ou Shapefile
-        save_to_geojson_or_shp(region_df, filename, output_format)
-
-        # Simuler le téléchargement du fichier
-        with open(filename, "rb") as file:
-            st.download_button(
-                label="Télécharger le fichier",
-                data=file,
-                file_name=filename,
-                mime="application/json" if output_format == "geojson" else "application/zip"
-            )
+        elif output_format == "Shapefile":
+            shapefile_dir = os.path.splitext(filename)[0]
+            os.makedirs(shapefile_dir, exist_ok=True)
+            region_df.to_file(f"{shapefile_dir}/{filename}", driver='ESRI Shapefile')
+            # Package shapefile into a zip
+            with zipfile.ZipFile(f"{shapefile_dir}.zip", 'w') as zipf:
+                for file in os.listdir(shapefile_dir):
+                    zipf.write(os.path.join(shapefile_dir, file), file)
+            st.download_button('Download Shapefile', data=open(f"{shapefile_dir}.zip", 'rb'), file_name=f"{shapefile_dir}.zip", mime="application/zip")
+        
+        st.success(f"Data for {region} downloaded successfully!")
 
     except Exception as e:
-        st.error(f"Une erreur est survenue : {e}")
+        st.error(f"Error: {e}")
