@@ -12,7 +12,7 @@ import json
 from streamlit_folium import st_folium
 import folium
 from folium.plugins import Draw
-from s2sphere import RegionCoverer, LatLng, Cap, CellId
+from s2sphere import RegionCoverer, LatLng, Cap
 
 st.set_page_config(page_title="Téléchargement Open Buildings", layout="wide")
 st.title("📦 Télécharger des données de bâtiments (Google Open Buildings)")
@@ -49,10 +49,12 @@ def get_s2_covering(geom, level=13):
     coverer = RegionCoverer()
     coverer.min_level = level
     coverer.max_level = level
-    bounds = geom.bounds
-    latlngs = [LatLng.from_degrees(bounds[1], bounds[0]), LatLng.from_degrees(bounds[3], bounds[2])]
-    cap = Cap.from_axis_angle(latlngs[0].to_point(), 0.5)
-    return [cell.id() for cell in coverer.get_covering(cap)]
+    rect = geom.bounds
+    latlng1 = LatLng.from_degrees(rect[1], rect[0])
+    latlng2 = LatLng.from_degrees(rect[3], rect[2])
+    region = Cap.from_axis_angle(latlng1.to_point(), 0.1)
+    cell_ids = coverer.get_covering(region)
+    return [cell.id() for cell in cell_ids]
 
 # --- TELECHARGEMENT DONNEES GOOGLE OPEN BUILDINGS ---
 def download_and_filter(geom, data_type="polygons"):
@@ -100,6 +102,7 @@ if st.button("Télécharger"):
                         st.download_button("Télécharger Shapefile (ZIP)", f.read(), "buildings.zip", "application/zip")
 
 # --- INFO ---
-st.markdown(\"\"\"\n---\n**📌 Source des données :** [Google Open Buildings Dataset](https://sites.research.google/open-buildings/#download)  
-\"\"\")
-
+st.markdown("""
+---
+**📌 Source des données :** [Google Open Buildings Dataset](https://sites.research.google/open-buildings/#download)
+""")
