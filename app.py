@@ -79,25 +79,31 @@ if st.button("Télécharger"):
         filename, region_df = get_filename_and_region_dataframe(region_border_source, region, your_own_wkt_polygon)
 
         # Logique pour générer les fichiers GeoJSON ou Shapefile
-        def save_to_geojson_or_shp(gdf, filename):
-            if output_format == 'geojson':
-                gdf.to_file(filename, driver='GeoJSON')
-            elif output_format == 'shp':
-                gdf.to_file(filename.replace('.shp', '.zip'), driver='ESRI Shapefile')
+def save_to_geojson_or_shp(gdf, filename, output_format):
+    """Sauvegarde un GeoDataFrame au format GeoJSON ou Shapefile."""
+    if output_format == "geojson":
+        gdf.to_file(filename, driver="GeoJSON")
+    elif output_format == "shp":
+        # Le Shapefile doit être compressé en ZIP
+        gdf.to_file(filename.replace(".shp", ".zip"), driver="ESRI Shapefile")
 
         # Simulez la génération des données
-        gdf = gpd.GeoDataFrame(geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])], crs='EPSG:4326')
+        gdf = gpd.GeoDataFrame(geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])], crs="EPSG:4326")
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{output_format}') as tmp_file:
             save_to_geojson_or_shp(gdf, tmp_file.name)
             st.success("Fichier prêt !")
 
             # Téléchargement du fichier
-            with open(tmp_file.name, "rb") as file:
-                st.download_button(
-                    label="Télécharger le fichier",
-                    data=file,
-                    file_name=os.path.basename(tmp_file.name),
-                    mime="application/zip" if output_format == "shp" else "application/json"
-                )
+          output_format = "geojson"  # ou "shp"
+filename = f"open_buildings_v3.{output_format}"
+save_to_geojson_or_shp(gdf, filename, output_format)
     except Exception as e:
         st.error(f"Une erreur est survenue : {e}")
+# Bouton pour télécharger le fichier
+with open(filename, "rb") as file:
+    st.download_button(
+        label="Télécharger le fichier",
+        data=file,
+        file_name=filename,
+        mime="application/json" if output_format == "geojson" else "application/zip"
+    )
