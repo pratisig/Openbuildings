@@ -6,4 +6,4 @@ folium
 streamlit-folium
 requests
 s2sphere
-earthengine-api
+--upgrade pyogrio
