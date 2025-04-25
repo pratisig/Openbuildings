@@ -24,7 +24,7 @@ mode = st.sidebar.radio("Choisir la zone", ["📍 Choisir un pays", "✏️ Dess
 geometry = None
 
 if mode == "📍 Choisir un pays":
-    world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
+    world = gpd.read_file(gpd.datasets.get_path("countries.geojson"))
     countries = world["name"].sort_values().tolist()
     selected_country = st.sidebar.selectbox("Pays", countries)
     geometry = world[world["name"] == selected_country].geometry.values[0]
