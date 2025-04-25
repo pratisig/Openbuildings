@@ -1,5 +1,6 @@
-streamlit
-geopandas
+streamlit==1.44.1
+geopandas==1.0.1
+pandas==2.2.3
 s2geometry
 tensorflow
 pandas
