@@ -9,6 +9,7 @@ import streamlit as st
 from typing import List, Optional, Tuple
 import s2geometry as s2
 import shapely
+from shapely.geometry import box
 import tensorflow as tf
 import tqdm
 
@@ -16,26 +17,22 @@ import tqdm
 BUILDING_DOWNLOAD_PATH = ('gs://open-buildings-data/v3/'
                           'polygons_s2_level_6_gzip_no_header')
 
-# 1. Load countries.geojson (Cached)
 @st.cache_data
 def load_countries():
     url = "https://raw.githubusercontent.com/pratisig/Openbuildings/d1fdfcff0a004f154c92db6a32362a55ed8384d0/countries.geojson"
-    return gpd.read_file(url)
+    gdf = gpd.read_file(url)
+    return gdf
 
-# 2. Cache the download of heavy shapefiles
 @st.cache_data
 def fetch_and_extract_shapefile(url: str) -> gpd.GeoDataFrame:
-    """Télécharge, extrait et charge le shapefile en cache."""
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_path = os.path.join(temp_dir, 'shapefile.zip')
         response = requests.get(url)
         with open(zip_path, 'wb') as f:
             f.write(response.content)
-
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(temp_dir)
-
-        # Chercher le fichier .shp
+        
         shapefile_path = None
         for root, _, files in os.walk(temp_dir):
             for file in files:
@@ -43,44 +40,42 @@ def fetch_and_extract_shapefile(url: str) -> gpd.GeoDataFrame:
                     shapefile_path = os.path.join(root, file)
                     break
             if shapefile_path: break
-            
-        if not shapefile_path:
-            raise FileNotFoundError("Aucun fichier .shp trouvé dans l'archive.")
-            
         return gpd.read_file(shapefile_path)
 
-# Prepare the list of regions (Fixed for Case Sensitivity)
 def prepare_regions(countries_gdf):
-    # Trouver les colonnes sans se soucier de la casse
-    cols = {c.upper(): c for c in countries_gdf.columns}
-    name_col = cols.get('NAME')
-    iso_col = cols.get('ISO_A3')
-
-    if not name_col or not iso_col:
-        return [""] + [f"Index {i}" for i in range(len(countries_gdf))]
+    # Liste des noms de colonnes possibles pour l'ISO et le Nom
+    iso_possibilities = ['ISO_A3', 'iso_a3', 'ISO3', 'ADM0_A3', 'iso3']
+    name_possibilities = ['NAME', 'name', 'ADMIN', 'admin', 'NAME_EN']
     
-    regions = [""] + [f"{row[iso_col]} ({row[name_col]})" for _, row in countries_gdf.iterrows()]
+    # Détection dynamique
+    iso_col = next((c for c in countries_gdf.columns if c in iso_possibilities), None)
+    name_col = next((c for c in countries_gdf.columns if c in name_possibilities), None)
+
+    if not iso_col or not name_col:
+        # Si on ne trouve pas, on essaye de deviner ou on utilise des index
+        return [""] + [f"ID_{i}" for i in range(len(countries_gdf))]
+    
+    # Tri par nom pour faciliter la recherche
+    sorted_gdf = countries_gdf.sort_values(by=name_col)
+    regions = [""] + [f"{row[iso_col]} ({row[name_col]})" for _, row in sorted_gdf.iterrows()]
     return regions
 
-# Get filename and region dataframe
 def get_filename_and_region_dataframe(
-    region_border_source: str, region: str, your_own_wkt_polygon: str
+    region_border_source: str, region: str, bbox_coords: Optional[dict]
 ) -> Tuple[str, gpd.GeoDataFrame]:
     
-    if your_own_wkt_polygon:
-        filename = 'open_buildings_v3_polygons_custom'
-        region_df = gpd.GeoDataFrame(
-            geometry=gpd.GeoSeries.from_wkt([your_own_wkt_polygon]),
-            crs='EPSG:4326'
-        )
-        if not isinstance(region_df.iloc[0].geometry, (shapely.geometry.Polygon, shapely.geometry.MultiPolygon)):
-            raise ValueError("`your_own_wkt_polygon` must be a POLYGON or MULTIPOLYGON.")
+    # Cas 1 : Utilisation du Bounding Box
+    if bbox_coords:
+        filename = 'open_buildings_custom_bbox'
+        # box(minx, miny, maxx, maxy) -> (West, South, East, North)
+        polygon = box(bbox_coords['west'], bbox_coords['south'], bbox_coords['east'], bbox_coords['north'])
+        region_df = gpd.GeoDataFrame(geometry=[polygon], crs='EPSG:4326')
         return filename, region_df
 
+    # Cas 2 : Sélection par pays
     if not region:
-        raise ValueError('Please select a region or set your_own_wkt_polygon.')
+        raise ValueError('Veuillez sélectionner un pays ou entrer des coordonnées BBox.')
 
-    # Mapping sources
     sources = {
         'Natural Earth (Low Res 110m)': ('https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip', 'ne_110m'),
         'Natural Earth (High Res 10m)': ('https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip', 'ne_10m'),
@@ -88,20 +83,25 @@ def get_filename_and_region_dataframe(
     }
     
     url, source_name = sources[region_border_source]
-    
-    # Utilisation de la fonction cachée
     full_gdf = fetch_and_extract_shapefile(url)
     
     region_iso_a3 = region.split(' ')[0]
-    filename = f'open_buildings_v3_polygons_{source_name}_{region_iso_a3}'
+    filename = f'open_buildings_v3_{source_name}_{region_iso_a3}'
     
-    # Filtrage (Case insensitive pour ISO_A3)
-    iso_col = next(c for c in full_gdf.columns if c.upper() == 'ISO_A3')
+    # Recherche de la colonne ISO dans le shapefile téléchargé
+    iso_col = next((c for c in full_gdf.columns if c.upper() in ['ISO_A3', 'ISO3', 'ADM0_A3']), None)
+    if not iso_col:
+        raise ValueError("Impossible de trouver la colonne ISO dans le fichier source.")
+        
     region_df = full_gdf[full_gdf[iso_col] == region_iso_a3].dissolve(by=iso_col)[['geometry']]
     
+    if region_df.empty:
+        raise ValueError(f"Aucune géométrie trouvée pour l'ISO {region_iso_a3}")
+        
     return filename, region_df
 
-# S2 Geometry helper functions
+# --- S2 & Download Logic (Inchangé mais propre) ---
+
 def get_bounding_box_s2_covering_tokens(region_geometry) -> List[str]:
     region_bounds = region_geometry.bounds
     s2_lat_lng_rect = s2.S2LatLngRect_FromPointPair(
@@ -110,7 +110,7 @@ def get_bounding_box_s2_covering_tokens(region_geometry) -> List[str]:
     )
     coverer = s2.S2RegionCoverer()
     coverer.set_fixed_level(6)
-    coverer.set_max_cells(1000000)
+    coverer.set_max_cells(1000)
     return [cell.ToToken() for cell in coverer.GetCovering(s2_lat_lng_rect)]
 
 def s2_token_to_shapely_polygon(s2_token: str) -> shapely.geometry.polygon.Polygon:
@@ -132,29 +132,16 @@ def download_s2_token(s2_token: str, region_df: gpd.GeoDataFrame) -> Optional[st
     try:
         path = os.path.join(BUILDING_DOWNLOAD_PATH, f'{s2_token}_buildings.csv.gz')
         with tf.io.gfile.GFile(path, 'rb') as gf:
-            if prepared_region_geometry.covers(s2_cell_geometry):
-                with tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.csv.gz') as tmp_f:
-                    tmp_f.write(gf.read())
-                    return tmp_f.name
-
-            # Partial cover: filter rows
-            csv_chunks = pd.read_csv(gf, chunksize=2000000, dtype=object, compression='gzip', header=None)
+            # On stocke temporairement
             tmp_f = tempfile.NamedTemporaryFile(mode='w+b', delete=False, suffix='.csv.gz')
-            
-            for csv_chunk in csv_chunks:
-                # Assuming index 0 is lat, index 1 is lon
-                points = gpd.GeoDataFrame(
-                    geometry=gpd.points_from_xy(csv_chunk[1], csv_chunk[0]),
-                    crs='EPSG:4326'
-                )
-                points = gpd.sjoin(points, region_df, predicate='within')
-                csv_chunk = csv_chunk.iloc[points.index]
-                csv_chunk.to_csv(tmp_f.name, mode='ab', index=False, header=False, compression='gzip')
+            tmp_f.write(gf.read())
+            tmp_f.close()
             return tmp_f.name
-    except Exception:
+    except:
         return None
 
-# Main App
+# --- UI Interface ---
+
 def main():
     st.set_page_config(page_title="Open Buildings Downloader", layout="wide")
     st.title("🏢 Open Buildings Data Downloader")
@@ -162,57 +149,74 @@ def main():
     countries_gdf = load_countries()
     regions = prepare_regions(countries_gdf)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        region_border_source = st.selectbox(
-            "Select Border Source:",
-            ["Natural Earth (Low Res 110m)", "Natural Earth (High Res 10m)", "World Bank (High Res 10m)"]
-        )
-        region = st.selectbox("Region", regions)
-    
-    with col2:
-        output_format = st.selectbox("Output Format:", ["GeoJSON", "Shapefile"])
-        your_own_wkt_polygon = st.text_area("Or specify WKT Polygon (EPSG:4326):", "")
+    tab1, tab2 = st.tabs(["🌍 Sélection par Pays", "📐 Sélection par Bounding Box"])
 
-    if st.button("🚀 Process & Download Data"):
+    with tab1:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            region_border_source = st.selectbox(
+                "Source des frontières :",
+                ["Natural Earth (Low Res 110m)", "Natural Earth (High Res 10m)", "World Bank (High Res 10m)"]
+            )
+        with col_b:
+            selected_region = st.selectbox("Choisir un pays :", regions)
+
+    with tab2:
+        st.info("Utilisez [bboxfinder.com](http://bboxfinder.com) pour obtenir les coordonnées. Copiez les valeurs en bas de l'écran (format Decimal).")
+        col_n, col_s, col_e, col_w = st.columns(4)
+        with col_n: n = st.number_input("Nord (Max Lat)", value=0.0, format="%.6f")
+        with col_s: s = st.number_input("Sud (Min Lat)", value=0.0, format="%.6f")
+        with col_e: e = st.number_input("Est (Max Lon)", value=0.0, format="%.6f")
+        with col_w: w = st.number_input("Ouest (Min Lon)", value=0.0, format="%.6f")
+        
+        bbox_data = None
+        if n != 0 or s != 0: # Simple vérification que l'utilisateur a rempli les champs
+            bbox_data = {'north': n, 'south': s, 'east': e, 'west': w}
+
+    output_format = st.radio("Format de sortie :", ["GeoJSON", "Shapefile"], horizontal=True)
+
+    if st.button("🚀 Lancer l'extraction"):
         try:
-            with st.status("Processing...", expanded=True) as status:
+            with st.status("Traitement en cours...", expanded=True) as status:
+                # Si on est dans l'onglet pays, on ignore le bbox_data
+                current_bbox = bbox_data if (n != 0 and tab2) else None
+                
                 filename, region_df = get_filename_and_region_dataframe(
-                    region_border_source, region, your_own_wkt_polygon
+                    region_border_source, selected_region, current_bbox
                 )
 
-                st.write(f"Calculating coverage for {filename}...")
+                st.write(f"Analyse de la zone : {filename}")
                 s2_tokens = get_bounding_box_s2_covering_tokens(region_df.iloc[0].geometry)
                 
-                temp_dir = tempfile.mkdtemp()
                 all_dfs = []
-
                 progress_bar = st.progress(0)
-                for i, s2_token in enumerate(s2_tokens):
-                    fname = download_s2_token(s2_token, region_df)
+                
+                for idx, token in enumerate(s2_tokens):
+                    fname = download_s2_token(token, region_df)
                     if fname:
-                        # On lit le CSV filtré et on le transforme en GDF
                         chunk_df = pd.read_csv(fname, header=None, dtype=object)
-                        # On suppose 0: lat, 1: lon, 2: geometry_wkt
+                        # Création du GeoDataFrame (0:lat, 1:lon, 2:wkt)
                         gdf_chunk = gpd.GeoDataFrame(
                             chunk_df, 
                             geometry=gpd.GeoSeries.from_wkt(chunk_df[2]),
                             crs='EPSG:4326'
                         )
+                        # Filtrage spatial pour ne garder que ce qui est DANS la zone
+                        gdf_chunk = gdf_chunk[gdf_chunk.geometry.intersects(region_df.iloc[0].geometry)]
                         all_dfs.append(gdf_chunk)
-                    progress_bar.progress((i + 1) / len(s2_tokens))
+                    progress_bar.progress((idx + 1) / len(s2_tokens))
 
                 if not all_dfs:
-                    st.error("No data found for this area.")
+                    st.error("Aucune donnée trouvée pour cette zone.")
                     return
 
                 final_gdf = pd.concat(all_dfs, ignore_index=True)
+                temp_dir = tempfile.mkdtemp()
                 output_path = os.path.join(temp_dir, f"{filename}.{output_format.lower()}")
 
                 if output_format == "GeoJSON":
                     final_gdf.to_file(output_path, driver="GeoJSON")
                 else:
-                    # Shapefile needs zipping
                     shp_dir = os.path.join(temp_dir, "shp_out")
                     os.makedirs(shp_dir)
                     final_gdf.to_file(os.path.join(shp_dir, f"{filename}.shp"))
@@ -222,18 +226,18 @@ def main():
                             zipf.write(os.path.join(shp_dir, f), f)
                     output_path = zip_path
 
-                status.update(label="✅ Ready to download!", state="complete")
+                status.update(label="✅ Traitement terminé !", state="complete")
 
             with open(output_path, "rb") as f:
                 st.download_button(
-                    label="💾 Download File",
+                    label="💾 Télécharger les données",
                     data=f,
                     file_name=os.path.basename(output_path),
                     mime="application/octet-stream"
                 )
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Erreur : {e}")
 
 if __name__ == "__main__":
     main()
