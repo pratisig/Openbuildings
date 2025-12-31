@@ -9,4 +9,4 @@ s2geometry
 tensorflow
 typing 
 tqdm                                                             
-openbuildings
+open-buildings
