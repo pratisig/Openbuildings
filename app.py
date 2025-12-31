@@ -23,7 +23,19 @@ def load_countries():
 
 # Prepare the list of regions
 def prepare_regions(countries_gdf):
-    regions = [""] + [f"{row.ISO_A3} ({row.NAME})" for _, row in countries_gdf.iterrows()]
+    # On affiche les colonnes dans la console de debug Streamlit pour vérifier
+    # st.write(countries_gdf.columns) 
+    
+    # Tentative de récupération des noms de colonnes (souvent 'name' et 'iso_a3')
+    name_col = next((c for c in countries_gdf.columns if c.upper() == 'NAME'), None)
+    iso_col = next((c for c in countries_gdf.columns if c.upper() == 'ISO_A3'), None)
+
+    if not name_col or not iso_col:
+        # Fallback si les colonnes standards ne sont pas trouvées
+        regions = [""] + [f"Région {i}" for i in range(len(countries_gdf))]
+    else:
+        regions = [""] + [f"{row[iso_col]} ({row[name_col]})" for _, row in countries_gdf.iterrows()]
+    
     return regions
 
 # Get filename and region dataframe
