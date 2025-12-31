@@ -5,12 +5,17 @@ import geopandas as gpd
 import pandas as pd
 import requests
 import streamlit as st
+import s2geometry as s2
 from shapely.geometry import box
+import tensorflow as tf
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
-import open_buildings as ob
 
 # Configuration
 st.set_page_config(page_title="Open Buildings Downloader", layout="wide")
+
+# Constants
+BUILDING_DOWNLOAD_PATH = 'gs://open-buildings-data/v3/polygons_s2_level_6_gzip_no_header'
 
 @st.cache_data
 def load_countries():
@@ -74,6 +79,22 @@ def prepare_regions(countries_gdf):
     
     return [""] + sorted(regions)
 
+def get_s2_tokens(geometry) -> list:
+    """Génère les tokens S2 pour une géométrie donnée"""
+    bounds = geometry.bounds
+    
+    rect = s2.S2LatLngRect(
+        s2.S2LatLng.FromDegrees(bounds[1], bounds[0]),
+        s2.S2LatLng.FromDegrees(bounds[3], bounds[2])
+    )
+    
+    coverer = s2.S2RegionCoverer()
+    coverer.set_fixed_level(6)
+    coverer.set_max_cells(1000)
+    
+    covering = coverer.GetCovering(rect)
+    return [cell.ToToken() for cell in covering]
+
 def find_iso_column(gdf):
     """Trouve la colonne ISO dans un GeoDataFrame"""
     iso_columns = ['ISO_A3', 'ISO3', 'ADM0_A3', 'WB_A3', 'ISO_A2', 'ISO3166-1-Alpha-3', 'ISO3166-1-Alpha-2']
@@ -83,6 +104,69 @@ def find_iso_column(gdf):
             return col
     return None
 
+def download_single_tile(token: str, geom):
+    """Télécharge une tuile S2 (fonction pour parallélisation)"""
+    csv_url = os.path.join(BUILDING_DOWNLOAD_PATH, f'{token}_buildings.csv.gz')
+    
+    try:
+        with tf.io.gfile.GFile(csv_url, 'rb') as gf:
+            # Lecture du CSV.gz sans header
+            df = pd.read_csv(gf, header=None, compression='gzip', names=['latitude', 'longitude', 'geometry_wkt'])
+            
+            if len(df) > 0:
+                # Conversion en GeoDataFrame
+                gdf_chunk = gpd.GeoDataFrame(
+                    df[['latitude', 'longitude']],
+                    geometry=gpd.GeoSeries.from_wkt(df['geometry_wkt']),
+                    crs='EPSG:4326'
+                )
+                
+                # Filtrage spatial
+                gdf_chunk = gdf_chunk[gdf_chunk.intersects(geom)]
+                
+                if not gdf_chunk.empty:
+                    # Calcul de la surface en m²
+                    gdf_chunk['area_m2'] = gdf_chunk.to_crs('EPSG:3857').geometry.area
+                    return gdf_chunk
+    except Exception as e:
+        # Tuile vide ou erreur, on continue
+        pass
+    
+    return None
+
+def download_tiles_parallel(tokens: list, geom, max_workers: int = 10):
+    """Télécharge les tuiles en parallèle avec barre de progression"""
+    all_data = []
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    buildings_found = 0
+    completed = 0
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_token = {executor.submit(download_single_tile, token, geom): token 
+                          for token in tokens}
+        
+        for future in as_completed(future_to_token):
+            token = future_to_token[future]
+            completed += 1
+            
+            try:
+                result = future.result()
+                if result is not None:
+                    all_data.append(result)
+                    buildings_found += len(result)
+                    status_text.text(f"✅ {completed}/{len(tokens)} tuiles | {buildings_found:,} bâtiments trouvés")
+            except Exception as e:
+                pass
+            
+            progress_bar.progress(completed / len(tokens))
+    
+    status_text.empty()
+    progress_bar.empty()
+    
+    return all_data
+
 def create_shapefile_zip(gdf: gpd.GeoDataFrame, base_name: str) -> bytes:
     """Crée un ZIP contenant le shapefile"""
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -90,7 +174,8 @@ def create_shapefile_zip(gdf: gpd.GeoDataFrame, base_name: str) -> bytes:
         
         # Limitation des noms de colonnes à 10 caractères pour shapefile
         gdf_copy = gdf.copy()
-        gdf_copy.columns = [col[:10] if col != 'geometry' else col for col in gdf_copy.columns]
+        column_map = {col: col[:10] for col in gdf_copy.columns if col != 'geometry'}
+        gdf_copy = gdf_copy.rename(columns=column_map)
         gdf_copy.to_file(shp_path, driver="ESRI Shapefile")
         
         zip_buffer = BytesIO()
@@ -119,6 +204,14 @@ def main():
     with st.sidebar:
         st.header("⚙️ Paramètres")
         
+        max_workers = st.slider(
+            "⚡ Téléchargements parallèles",
+            min_value=5,
+            max_value=20,
+            value=10,
+            help="Plus de workers = plus rapide"
+        )
+        
         st.markdown("---")
         
         export_format = st.selectbox(
@@ -128,34 +221,33 @@ def main():
         )
         
         simplify_geom = st.checkbox(
-            "Simplifier les géométries",
+            "Simplifier géométries",
             value=False,
-            help="Réduit la précision pour alléger le fichier (recommandé pour > 50k bâtiments)"
+            help="Réduit la précision (recommandé pour > 50k bâtiments)"
         )
         
         if simplify_geom:
             tolerance = st.slider(
-                "Tolérance de simplification",
+                "Tolérance",
                 min_value=0.00001,
                 max_value=0.0001,
                 value=0.00001,
-                format="%.5f",
-                help="Plus la valeur est élevée, plus la simplification est forte"
+                format="%.5f"
             )
         
         st.markdown("---")
-        st.markdown("### 💡 Astuces")
+        st.markdown("### 💡 Info")
         st.markdown("""
-        - **open-buildings** : Utilise la bibliothèque officielle
-        - **Formats optimisés** : GPKG pour grandes zones
-        - **CSV** : Données brutes avec WKT
+        - **Source** : Google Open Buildings v3
+        - **Téléchargement** : Parallèle optimisé
+        - **Format source** : CSV.gz depuis Google Cloud
         """)
     
     # Chargement des pays
     countries_gdf = load_countries()
     
     if countries_gdf is not None:
-        st.sidebar.success(f"✅ {len(countries_gdf)} pays chargés")
+        st.sidebar.success(f"✅ {len(countries_gdf)} pays disponibles")
     
     regions_list = prepare_regions(countries_gdf)
     
@@ -204,7 +296,6 @@ def main():
         try:
             geom = None
             name = ""
-            region_poly = None
             
             # Mode Pays
             if mode == "country":
@@ -216,7 +307,7 @@ def main():
                 if "World Bank" in source_name:
                     url = "https://datacatalogfiles.worldbank.org/ddh-published/0038272/DR0046659/wb_countries_admin0_10m.zip"
                 
-                with st.spinner("📥 Téléchargement des frontières..."):
+                with st.spinner("📥 Chargement des frontières..."):
                     full_gdf = fetch_and_extract_shapefile(url)
                 
                 if full_gdf is None:
@@ -236,7 +327,6 @@ def main():
                     return
                 
                 geom = target_gdf.dissolve().iloc[0].geometry
-                region_poly = geom
                 name = iso_code
                 st.success(f"✅ Pays trouvé : {choice}")
             
@@ -248,42 +338,26 @@ def main():
                 
                 st.info(f"📐 Mode : BBox personnalisée")
                 geom = box(w, s, e, n)
-                region_poly = geom
-                name = f"custom_{abs(hash(f'{n}{s}{e}{w}'))}"
+                name = f"bbox_{abs(hash(f'{n}{s}{e}{w}'))}"
                 st.success("✅ Zone définie")
             
-            # Extraction des données avec open-buildings
+            # Extraction des données
             st.markdown("---")
             st.subheader("📥 Téléchargement des bâtiments")
             
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+            tokens = get_s2_tokens(geom)
+            st.info(f"🔢 **{len(tokens)}** tuiles S2 à traiter | **{max_workers}** téléchargements parallèles")
             
-            status_text.text("🔍 Téléchargement des bâtiments en cours...")
-            
-            # Téléchargement avec open-buildings
-            try:
-                buildings_gdf = ob.download_buildings(
-                    region_poly,
-                    output_format="GeoDataFrame",
-                    max_workers=10
-                )
-                
-                progress_bar.progress(100)
-                status_text.empty()
-                
-            except Exception as e:
-                progress_bar.empty()
-                status_text.empty()
-                st.error(f"❌ Erreur lors du téléchargement : {e}")
-                st.info("💡 Essayez avec une zone plus petite ou vérifiez votre connexion")
-                return
+            # Téléchargement parallèle
+            all_data = download_tiles_parallel(tokens, geom, max_workers)
             
             # Résultats
-            if buildings_gdf is None or buildings_gdf.empty:
+            if not all_data:
                 st.warning("⚠️ Aucun bâtiment trouvé dans cette zone")
-                st.info("Cela peut signifier :\n- Zone vide\n- Données non disponibles\n- Coordonnées incorrectes")
+                st.info("💡 Cela peut signifier :\n- Zone sans données\n- Région non couverte\n- Coordonnées incorrectes")
             else:
+                buildings_gdf = pd.concat(all_data, ignore_index=True)
+                
                 # Simplification optionnelle
                 if simplify_geom and len(buildings_gdf) > 1000:
                     with st.spinner("🔧 Simplification des géométries..."):
@@ -294,16 +368,8 @@ def main():
                 # Statistiques
                 col1, col2, col3 = st.columns(3)
                 col1.metric("🏗️ Bâtiments", f"{len(buildings_gdf):,}")
-                
-                # Calculer la surface totale si disponible
-                if 'area_in_meters' in buildings_gdf.columns:
-                    total_area = buildings_gdf['area_in_meters'].sum()
-                    col2.metric("📐 Surface totale", f"{total_area:,.0f} m²")
-                
-                # Confidence moyenne si disponible
-                if 'confidence' in buildings_gdf.columns:
-                    avg_confidence = buildings_gdf['confidence'].mean()
-                    col3.metric("🎯 Confiance moy.", f"{avg_confidence:.2%}")
+                col2.metric("📐 Surface totale", f"{buildings_gdf['area_m2'].sum()/1e6:.2f} km²")
+                col3.metric("📏 Surface moyenne", f"{buildings_gdf['area_m2'].mean():.1f} m²")
                 
                 # Export selon le format choisi
                 st.markdown("### 💾 Téléchargement")
@@ -346,11 +412,10 @@ def main():
                 
                 elif export_format == "CSV":
                     csv_buffer = BytesIO()
-                    # Convertir geometry en WKT pour CSV
                     df_export = buildings_gdf.copy()
                     df_export['geometry_wkt'] = df_export['geometry'].apply(lambda x: x.wkt)
                     df_export = df_export.drop(columns=['geometry'])
-                    df_export.to_csv(csv_buffer, index=False)
+                    df_export.to_csv(csv_buffer, index=False, encoding='utf-8')
                     
                     st.download_button(
                         label="📥 Télécharger CSV",
@@ -361,28 +426,20 @@ def main():
                     )
                 
                 # Aperçu
-                with st.expander("👁️ Aperçu des données"):
+                with st.expander("👁️ Aperçu des 10 premiers bâtiments"):
                     st.dataframe(buildings_gdf.head(10))
-                    
-                    # Info sur les colonnes
-                    st.markdown("**Colonnes disponibles :**")
-                    st.write(", ".join(buildings_gdf.columns.tolist()))
                 
-                # Statistiques avancées
+                # Statistiques détaillées
                 with st.expander("📊 Statistiques détaillées"):
-                    if 'area_in_meters' in buildings_gdf.columns:
-                        st.write(f"**Surface min :** {buildings_gdf['area_in_meters'].min():.2f} m²")
-                        st.write(f"**Surface max :** {buildings_gdf['area_in_meters'].max():.2f} m²")
-                        st.write(f"**Surface moyenne :** {buildings_gdf['area_in_meters'].mean():.2f} m²")
-                    
-                    if 'confidence' in buildings_gdf.columns:
-                        st.write(f"**Confiance min :** {buildings_gdf['confidence'].min():.2%}")
-                        st.write(f"**Confiance max :** {buildings_gdf['confidence'].max():.2%}")
+                    st.write(f"**Surface minimale :** {buildings_gdf['area_m2'].min():.2f} m²")
+                    st.write(f"**Surface maximale :** {buildings_gdf['area_m2'].max():.2f} m²")
+                    st.write(f"**Surface médiane :** {buildings_gdf['area_m2'].median():.2f} m²")
+                    st.write(f"**Tuiles avec données :** {len(all_data)}/{len(tokens)}")
         
         except Exception as e:
             st.error(f"❌ Erreur système : {e}")
             import traceback
-            with st.expander("🔍 Détails"):
+            with st.expander("🔍 Détails de l'erreur"):
                 st.code(traceback.format_exc())
 
 if __name__ == "__main__":
