@@ -1,1 +1,6 @@
-
+cmake
+g++
+swig
+libgoogle-glog-dev
+libgflags-dev
+libssl-dev
