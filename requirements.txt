@@ -6,3 +6,6 @@ google-cloud-storage
 s2sphere
 swig
 s2geometry
+tensorflow
+typing 
+tqdm                                                             
