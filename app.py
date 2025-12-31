@@ -138,10 +138,17 @@ def download_tiles_parallel(tokens: list, geom, max_workers: int = 10):
     """Télécharge les tuiles en parallèle avec barre de progression"""
     all_data = []
     
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # Conteneurs pour l'affichage
+    progress_container = st.container()
+    
+    with progress_container:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        stats_col1, stats_col2, stats_col3 = st.columns(3)
+    
     buildings_found = 0
     completed = 0
+    tiles_with_data = 0
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_token = {executor.submit(download_single_tile, token, geom): token 
@@ -156,14 +163,22 @@ def download_tiles_parallel(tokens: list, geom, max_workers: int = 10):
                 if result is not None:
                     all_data.append(result)
                     buildings_found += len(result)
-                    status_text.text(f"✅ {completed}/{len(tokens)} tuiles | {buildings_found:,} bâtiments trouvés")
+                    tiles_with_data += 1
             except Exception as e:
                 pass
             
-            progress_bar.progress(completed / len(tokens))
+            # Mise à jour de l'affichage
+            progress_bar.progress(completed / len(tokens), text=f"Progression : {completed}/{len(tokens)} tuiles")
+            status_text.info(f"⏳ Traitement en cours... Tuile {completed}/{len(tokens)}")
+            
+            # Mise à jour des statistiques en temps réel
+            stats_col1.metric("🏗️ Bâtiments", f"{buildings_found:,}")
+            stats_col2.metric("✅ Tuiles avec données", f"{tiles_with_data}")
+            stats_col3.metric("📊 Progression", f"{int(completed/len(tokens)*100)}%")
     
-    status_text.empty()
+    # Nettoyer l'affichage temporaire
     progress_bar.empty()
+    status_text.empty()
     
     return all_data
 
