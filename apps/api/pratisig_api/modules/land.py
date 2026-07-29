@@ -49,6 +49,10 @@ WEIGHTS = {
     "travel": 0.10,
 }
 
+# En deçà de ce taux de couverture, le score est affiché mais signalé comme
+# non concluant : trop de critères manquants pour trancher.
+MIN_COVERAGE_PCT = 50.0
+
 SCORE_THRESHOLDS = [
     (75, "excellent", "#437a22"),
     (55, "bon", "#6daa45"),
@@ -467,15 +471,32 @@ def _compute_score(components: dict[str, float | None]) -> dict[str, Any]:
     total = sum(v * (WEIGHTS[k] / active_weight) for k, v in available.items())
     total = round(min(100, max(0, total)), 1)
     label, color = _score_label(total)
+    coverage = round(active_weight / sum(WEIGHTS.values()) * 100, 1)
+
+    # Un score calculé sur trop peu de composantes n'est pas exploitable.
+    # Sans ce garde-fou, une parcelle dont seule la distance à la ville est
+    # connue ressortait « excellente » à 95/100 — conclusion trompeuse.
+    reliable = coverage >= MIN_COVERAGE_PCT
+    if not reliable:
+        label = "non concluant"
+        color = "#bab9b4"
 
     return {
         "total": total,
         "label": label,
         "color": color,
+        "reliable": reliable,
         "breakdown": components,
         "weights_applied": {k: round(WEIGHTS[k] / active_weight, 3) for k in available},
-        "coverage_pct": round(active_weight / sum(WEIGHTS.values()) * 100, 1),
+        "coverage_pct": coverage,
         "missing": [k for k, v in components.items() if v is None],
+        "note": (
+            None
+            if reliable
+            else f"Score indicatif seulement : {coverage} % des critères disponibles "
+                 f"(minimum {MIN_COVERAGE_PCT} % pour conclure). "
+                 "Vérifiez que les sources externes sont joignables."
+        ),
     }
 
 
@@ -550,10 +571,13 @@ async def analyze(payload: LandAnalysisRequest) -> dict[str, Any]:
             "message": f"Route la plus proche à {services['nearest_road_km']} km : desserte difficile.",
         })
     if score["missing"]:
-        warnings.append({
-            "level": "info",
-            "message": f"Composantes indisponibles : {', '.join(score['missing'])} "
-                       f"(couverture {score['coverage_pct']} %).",
+        warnings.insert(0, {
+            "level": "warning" if score["reliable"] else "danger",
+            "message": (
+                f"Composantes indisponibles : {', '.join(score['missing'])} "
+                f"(couverture {score['coverage_pct']} %)."
+                + ("" if score["reliable"] else " Score non concluant.")
+            ),
         })
 
     return {

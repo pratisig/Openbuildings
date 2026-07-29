@@ -645,3 +645,74 @@ class TestSecurityCheckScript:
         raw = self.SCRIPT.read_bytes()[3:]
         decoded = raw.decode("cp1252", errors="replace")
         assert not {c for c in decoded if c in "\u201c\u201d\u2018\u2019"}
+
+
+class TestLandScoreReliability:
+    """Un score foncier calcule sur trop peu de criteres doit etre signale.
+
+    Regression : avec seulement la distance a la ville disponible (10 % de
+    couverture), une parcelle ressortait « excellente » a 95/100 -- conclusion
+    trompeuse alors que 5 criteres sur 6 manquaient.
+    """
+
+    def test_full_coverage_is_reliable(self):
+        from pratisig_api.modules.land import WEIGHTS, _compute_score
+
+        result = _compute_score({k: 80.0 for k in WEIGHTS})
+        assert result["reliable"] is True
+        assert result["note"] is None
+        assert result["label"] == "excellent"
+
+    def test_single_component_is_not_conclusive(self):
+        from pratisig_api.modules.land import WEIGHTS, _compute_score
+
+        components = {k: None for k in WEIGHTS}
+        components["travel"] = 95.0
+        result = _compute_score(components)
+        assert result["reliable"] is False
+        assert result["label"] == "non concluant"
+        assert "10.0 %" in result["note"]
+
+    def test_threshold_is_enforced(self):
+        from pratisig_api.modules.land import MIN_COVERAGE_PCT, WEIGHTS, _compute_score
+
+        # flood (30) + topography (15) + landcover (15) = 60 % > seuil
+        enough = {k: None for k in WEIGHTS}
+        enough.update({"flood": 70.0, "topography": 70.0, "landcover": 70.0})
+        assert _compute_score(enough)["reliable"] is True
+
+        # flood (30) + travel (10) = 40 % < seuil
+        too_few = {k: None for k in WEIGHTS}
+        too_few.update({"flood": 70.0, "travel": 70.0})
+        assert _compute_score(too_few)["reliable"] is False
+        assert MIN_COVERAGE_PCT == 50.0
+
+    def test_warning_is_raised_to_danger(self):
+        """L'avertissement passe en niveau danger quand le score n'est pas fiable."""
+        from pratisig_api.modules.land import WEIGHTS, _compute_score
+
+        components = {k: None for k in WEIGHTS}
+        components["travel"] = 95.0
+        assert _compute_score(components)["reliable"] is False
+
+
+class TestSmokeTestScript:
+    """Le script de verification doit distinguer les modes degrades."""
+
+    SCRIPT = (
+        pathlib.Path(__file__).resolve().parents[3] / "scripts" / "smoke_test.py"
+    )
+
+    def test_exists(self):
+        assert self.SCRIPT.exists()
+
+    def test_detects_degraded_modes(self):
+        """Un HTTP 200 ne suffit pas : approximate et reliable sont verifies."""
+        src = self.SCRIPT.read_text(encoding="utf-8")
+        assert 'meta.get("approximate")' in src
+        assert 'value.get("reliable") is False' in src
+
+    def test_is_syntactically_valid(self):
+        import ast
+
+        ast.parse(self.SCRIPT.read_text(encoding="utf-8"))

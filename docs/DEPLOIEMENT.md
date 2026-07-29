@@ -215,7 +215,42 @@ C'est la configuration la plus proche de la production.
 
 ---
 
-## 2. Premier test — que regarder
+## 2. Premier test — vérification automatique
+
+Une fois l'API démarrée, un seul appel vérifie tous les modules :
+
+```bash
+python scripts/smoke_test.py
+```
+
+```
+── Socle (hors ligne) ──
+  OK     Catalogue des modules             14 entrées
+  OK     Base de cultures                  10 entrées
+  ...
+── Services externes (réseau requis) ──
+  OK     Géocodage (Nominatim)             1 résultats
+  OK     OpenStreetMap (Overpass)          28 résultats
+  ...
+── Bilan ──
+  20 fonctionnels · 3 inactifs · 0 en erreur
+```
+
+Trois verdicts distincts :
+
+| Verdict | Signification |
+|---|---|
+| **OK** | Le module répond correctement |
+| **INACTIF** | Désactivé faute de configuration (Earth Engine, clé LLM…) — normal |
+| **ERREUR** | Réellement cassé, ou service externe injoignable |
+
+Le script détecte aussi les **modes dégradés** : une isochrone repliée sur une
+approximation géodésique ou un score foncier calculé sur trop peu de critères
+sont signalés en erreur, pas en succès.
+
+Option `--quick` pour ignorer les services externes lents.
+
+## 3. Premier test — que regarder
 
 Une fois lancé, ces cinq points valident l'essentiel :
 
@@ -236,7 +271,7 @@ vue.
 
 ---
 
-## 3. Déploiement — API sur Render
+## 4. Déploiement — API sur Render
 
 1. Sur [render.com](https://render.com) : **New → Blueprint**
 2. Sélectionnez ce dépôt — `render.yaml` est détecté automatiquement
@@ -270,7 +305,7 @@ Pour Earth Engine, collez le **contenu JSON** de la clé dans
 
 ---
 
-## 4. Déploiement — interface sur Vercel
+## 5. Déploiement — interface sur Vercel
 
 1. Sur [vercel.com](https://vercel.com) : **Add New → Project**, importez le dépôt
 2. **Root Directory** : `apps/web` ← indispensable, c'est un monorepo
@@ -305,7 +340,7 @@ la gestion est simplifiée et l'URL est unique.
 
 ---
 
-## 5. Ce qui est vérifié, ce qui ne l'est pas
+## 6. Ce qui est vérifié, ce qui ne l'est pas
 
 **Vérifié** : 140 tests passants, lint propre, build de l'interface, API
 démarrée avec toutes ses routes fonctionnelles, calculs (scoring foncier,
