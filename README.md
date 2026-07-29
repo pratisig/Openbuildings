@@ -29,6 +29,16 @@ Quinze dépôts coexistaient, avec les problèmes classiques de l'éparpillement
 
 ### En une commande
 
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/pratisig/Openbuildings.git pratisig-platform
+cd pratisig-platform
+.\scripts\dev.ps1
+```
+
+**macOS / Linux**
+
 ```bash
 git clone https://github.com/pratisig/Openbuildings.git pratisig-platform
 cd pratisig-platform
@@ -36,7 +46,10 @@ cd pratisig-platform
 ```
 
 Le script installe tout au premier lancement, puis démarre l'API et
-l'interface.
+l'interface. Prérequis : Python 3.10+ et Node.js 18+.
+
+> Sous Windows, `./scripts/dev.sh` ne fait rien (script bash) — utilisez
+> `dev.ps1`. En cas de blocage, voir [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md#si-ça-ne-marche-pas).
 
 - Interface : <http://localhost:5173>
 - API et documentation : <http://localhost:8000/docs>

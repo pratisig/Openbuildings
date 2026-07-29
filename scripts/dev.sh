@@ -10,6 +10,10 @@
 
 set -euo pipefail
 
+# Sous PowerShell, `./scripts/dev.sh` se termine sans rien faire : Windows ne
+# sait pas exécuter un script bash. Cette ligne n'est atteinte que par bash,
+# donc si vous êtes sous Windows, utilisez scripts\dev.ps1 à la place.
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_DIR="$ROOT/apps/api"
 WEB_DIR="$ROOT/apps/web"

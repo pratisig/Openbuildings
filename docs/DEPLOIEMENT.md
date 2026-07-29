@@ -52,6 +52,30 @@ Render fait tourner un vrai conteneur : rien de tout cela ne se pose.
 
 ## 1. En local (le plus simple)
 
+Prérequis : **Python 3.10+** et **Node.js 18+**.
+
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/pratisig/Openbuildings.git pratisig-platform
+cd pratisig-platform
+.\scripts\dev.ps1
+```
+
+> ⚠️ `./scripts/dev.sh` **ne fonctionne pas sous PowerShell** : Windows ne sait
+> pas exécuter un script bash et se contente de rendre la main sans rien faire,
+> sans message d'erreur. Utilisez `dev.ps1`.
+
+Si Windows refuse d'exécuter le script (« l'exécution de scripts est
+désactivée »), autorisez-le pour la session courante :
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\dev.ps1
+```
+
+### macOS / Linux
+
 ```bash
 git clone https://github.com/pratisig/Openbuildings.git pratisig-platform
 cd pratisig-platform
@@ -64,12 +88,54 @@ l'interface. Comptez deux à trois minutes au premier lancement.
 - Interface : <http://localhost:5173>
 - API et documentation : <http://localhost:8000/docs>
 
-Autres commandes :
+Autres commandes (remplacez `./scripts/dev.sh` par `.\scripts\dev.ps1` sous
+Windows) :
 
 ```bash
 ./scripts/dev.sh api      # API seule
 ./scripts/dev.sh check    # tests + lint + build
 ```
+
+### Sans script, à la main
+
+Utile si un script échoue, ou pour comprendre ce qu'il fait. **Deux terminaux.**
+
+Terminal 1 — l'API :
+
+```powershell
+# Windows
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r apps\api\requirements.txt
+cd apps\api
+..\..\.venv\Scripts\python.exe -m uvicorn pratisig_api.main:app --reload --port 8000
+```
+
+```bash
+# macOS / Linux
+python3 -m venv .venv
+./.venv/bin/pip install -r apps/api/requirements.txt
+cd apps/api
+../../.venv/bin/python -m uvicorn pratisig_api.main:app --reload --port 8000
+```
+
+Terminal 2 — l'interface :
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+### Si ça ne marche pas
+
+| Symptôme | Cause | Solution |
+|---|---|---|
+| Le script rend la main sans rien afficher | `dev.sh` lancé sous PowerShell | Utilisez `.\scripts\dev.ps1` |
+| « l'exécution de scripts est désactivée » | Politique PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
+| `localhost:5173` refuse la connexion | L'interface n'a pas démarré | Vérifiez que Node est installé : `node --version` |
+| La boutique Microsoft s'ouvre | Alias Python du Store | Installez Python depuis [python.org](https://www.python.org/downloads/) en cochant « Add python.exe to PATH » |
+| `ModuleNotFoundError: pratisig_api` | uvicorn lancé du mauvais dossier | Lancez-le depuis `apps/api` |
+| Erreur d'extension DuckDB au démarrage | Extensions `spatial`/`httpfs` non téléchargées | Vérifiez la connexion ; sans elles, Overture et Open Buildings sont indisponibles, le reste fonctionne |
 
 ### Avec Docker
 
