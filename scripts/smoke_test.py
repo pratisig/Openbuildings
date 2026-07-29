@@ -215,14 +215,20 @@ def main() -> int:
 
             results.append(report(label, Result.OK, note, ms))
         elif status in (502, 503, 504):
-            results.append(report(label, Result.BROKEN,
-                                  f"service injoignable : {str(body.get('detail', ''))[:45]}", ms))
+            detail = str(body.get("detail", ""))
+            results.append(report(label, Result.BROKEN, "service injoignable", ms))
+            for chunk in [detail[i:i + 96] for i in range(0, min(len(detail), 192), 96)]:
+                print(dim(f"           {chunk}"))
         elif status == 422:
             results.append(report(label, Result.DISABLED,
                                   f"aucune donnée : {str(body.get('detail', ''))[:45]}", ms))
         else:
-            results.append(report(label, Result.BROKEN,
-                                  f"HTTP {status} {str(body.get('detail', ''))[:40]}", ms))
+            detail = str(body.get("detail", ""))
+            results.append(report(label, Result.BROKEN, f"HTTP {status}", ms))
+            # Message complet sur une ligne dediee : tronque, il empeche
+            # tout diagnostic (« Invalid Input Error: Glo... »).
+            for chunk in [detail[i:i + 96] for i in range(0, min(len(detail), 288), 96)]:
+                print(dim(f"           {chunk}"))
 
     # ── Modules optionnels ────────────────────────────────────────
     print()

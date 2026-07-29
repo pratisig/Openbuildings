@@ -48,6 +48,11 @@ class DuckDBEngine:
                     log.warning("Extension DuckDB '%s' indisponible: %s", ext, exc)
             try:
                 conn.execute(f"SET s3_region='{settings.overture_s3_region}';")
+                # Les buckets publics comme Overture s'ouvrent en anonyme.
+                # Sans cette chaine vide, DuckDB cherche des identifiants AWS
+                # et echoue avec « No files found », message trompeur.
+                conn.execute("SET s3_access_key_id='';")
+                conn.execute("SET s3_secret_access_key='';")
             except Exception:
                 pass
             conn.execute(f"SET memory_limit='{settings.duckdb_memory_limit}';")

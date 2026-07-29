@@ -809,18 +809,32 @@ class TestOvertureAccess:
     versions -- le message laisse croire a une mauvaise version.
     """
 
-    def test_https_is_default(self):
+    def test_s3_anonymous_is_default(self):
+        """S3 anonyme : seul mode resolvant les jokers du chemin.
+
+        En HTTPS pur, DuckDB renvoie « Globbing is not supported » car il
+        n'existe pas d'API de listing de repertoire.
+        """
         from pratisig_api.config import settings
 
-        assert settings.overture_use_s3 is False
-        assert settings.overture_release_path.startswith("https://")
+        assert settings.overture_use_s3 is True
+        assert settings.overture_release_path.startswith("s3://")
 
-    def test_s3_still_available(self):
-        """L'acces S3 reste possible pour qui dispose d'identifiants AWS."""
+    def test_https_remains_available(self):
+        """Le mode HTTPS reste accessible pour un chemin de fichier explicite."""
         from pratisig_api.config import Settings
 
-        configured = Settings(overture_use_s3=True)
-        assert configured.overture_release_path.startswith("s3://")
+        configured = Settings(overture_use_s3=False)
+        assert configured.overture_release_path.startswith("https://")
+
+    def test_engine_sets_anonymous_credentials(self):
+        """Sans identifiants vides, DuckDB tente une authentification AWS."""
+        engine_src = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "pratisig_api" / "core" / "duckdb_engine.py"
+        ).read_text(encoding="utf-8")
+        assert "s3_access_key_id=''" in engine_src
+        assert "s3_secret_access_key=''" in engine_src
 
     def test_release_path_includes_version(self):
         from pratisig_api.config import settings

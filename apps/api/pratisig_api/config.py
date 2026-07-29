@@ -61,12 +61,13 @@ class Settings(BaseSettings):
 
     # ── Overture Maps ──────────────────────────────────────────────
     overture_release: str = "2025-06-25.0"
-    # Le bucket S3 d'Overture est en mode « requester pays » : DuckDB ne peut
-    # pas le lire sans identifiants AWS, d'ou les « No files found » observes.
-    # L'acces HTTPS public fonctionne sans authentification et reste le
-    # comportement par defaut. Mettre overture_use_s3=true si des identifiants
-    # AWS sont configures sur la machine.
-    overture_use_s3: bool = False
+    # Acces S3 anonyme (verifie le 29/07/2026) : c'est le seul mode qui
+    # fonctionne. En HTTPS pur, DuckDB ne sait pas resoudre les jokers du
+    # chemin (« Globbing is not supported ») car il n'y a pas d'API de
+    # listing ; en S3 sans identifiants explicitement vides, il tente une
+    # authentification AWS et retourne « No files found ».
+    # Le moteur force s3_access_key_id='' pour l'acces public.
+    overture_use_s3: bool = True
     overture_s3_base: str = "s3://overturemaps-us-west-2/release"
     overture_https_base: str = "https://overturemaps-us-west-2.s3.amazonaws.com/release"
     overture_s3_region: str = "us-west-2"

@@ -38,6 +38,10 @@ def connect():
         except Exception as exc:
             print(f"  extension {ext} indisponible : {exc}")
     conn.execute("SET s3_region='us-west-2';")
+    # Acces public : sans identifiants explicitement vides, DuckDB tente
+    # une authentification AWS et echoue.
+    conn.execute("SET s3_access_key_id='';")
+    conn.execute("SET s3_secret_access_key='';")
     return conn
 
 
@@ -92,7 +96,8 @@ def probe_overture(conn) -> tuple[str | None, str | None]:
     print("OVERTURE MAPS — recherche d'un accès valide")
     print("=" * 68)
 
-    for label, base in (("HTTPS public", OVERTURE_HTTPS), ("S3 direct", OVERTURE_S3)):
+    # S3 anonyme d'abord : c'est le seul mode qui resout les jokers.
+    for label, base in (("S3 anonyme", OVERTURE_S3), ("HTTPS public", OVERTURE_HTTPS)):
         print(f"\nMode {label} :")
         for release in CANDIDATE_RELEASES:
             path = f"{base}/{release}/theme=places/type=place/*"
@@ -106,6 +111,8 @@ def probe_overture(conn) -> tuple[str | None, str | None]:
                     reason = "aucun fichier"
                 elif "403" in text or "Access Denied" in text:
                     reason = "accès refusé (identifiants requis)"
+                elif "Globbing" in text:
+                    reason = "jokers non supportés en HTTPS"
                 else:
                     reason = text[:42]
                 print(f"  absente  {release}  ({reason})")
