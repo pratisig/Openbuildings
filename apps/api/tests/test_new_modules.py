@@ -7,6 +7,7 @@ et les améliorations d'isochrone (sante-isochrones-app).
 from __future__ import annotations
 
 import math
+import pathlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -477,3 +478,74 @@ class TestOptionalDependencies:
         for name, svc in data["services"].items():
             assert "status" in svc, f"{name} sans statut"
             assert "powers" in svc, f"{name} sans liste de modules alimentés"
+
+
+class TestWindowsScript:
+    """Le script PowerShell doit rester analysable par Windows PowerShell 5.1.
+
+    Régression : livré sans BOM, `dev.ps1` était lu en CP1252 par PowerShell 5.1.
+    Le tiret cadratin (UTF-8 e2 80 94) s'y décodait en `â€"` — ce guillemet
+    fermant était pris pour un délimiteur de chaîne, cassant l'analyse
+    syntaxique avec un message trompeur (« bloc Catch ou Finally manque »).
+    """
+
+    SCRIPT = (
+        pathlib.Path(__file__).resolve().parents[3] / "scripts" / "dev.ps1"
+    )
+    BOM = b"\xef\xbb\xbf"
+
+    def test_script_exists(self):
+        assert self.SCRIPT.exists(), "scripts/dev.ps1 est requis pour les utilisateurs Windows"
+
+    def test_has_utf8_bom(self):
+        raw = self.SCRIPT.read_bytes()
+        assert raw.startswith(self.BOM), (
+            "dev.ps1 doit commencer par un BOM UTF-8 : sans lui, Windows "
+            "PowerShell 5.1 lit le fichier en CP1252."
+        )
+
+    def test_no_characters_breaking_cp1252(self):
+        """Aucun caractère dont l'UTF-8 contient un octet 0x91-0x94.
+
+        Ces octets deviennent des guillemets typographiques en CP1252 et
+        PowerShell les interprète comme des délimiteurs de chaîne.
+        """
+        raw = self.SCRIPT.read_bytes()[len(self.BOM):]
+        decoded = raw.decode("cp1252", errors="replace")
+        found = {c for c in decoded if c in "\u201c\u201d\u2018\u2019"}
+        assert not found, (
+            f"Caractères dangereux dans dev.ps1 : {found}. "
+            "Remplacez les tirets cadratins (—) et filets (─) par des tirets ASCII."
+        )
+
+    def test_braces_balanced(self):
+        """Accolades et parenthèses équilibrées, hors commentaires et chaînes."""
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"<#.*?#>", "", src, flags=re.S)
+        code = re.sub(r"^\s*#.*$", "", code, flags=re.M)
+        code = re.sub(r'"(?:[^"`]|`.)*"', '""', code)
+        code = re.sub(r"'(?:[^']|'')*'", "''", code)
+        assert code.count("{") == code.count("}"), "accolades déséquilibrées"
+        assert code.count("(") == code.count(")"), "parenthèses déséquilibrées"
+
+    def test_every_try_has_catch_or_finally(self):
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"<#.*?#>", "", src, flags=re.S)
+        code = re.sub(r"^\s*#.*$", "", code, flags=re.M)
+        for match in re.finditer(r"\btry\s*\{", code, re.I):
+            depth, i = 0, match.end() - 1
+            while i < len(code):
+                if code[i] == "{":
+                    depth += 1
+                elif code[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            suite = code[i + 1 : i + 40].strip().lower()
+            line = code[: match.start()].count("\n") + 1
+            assert suite.startswith(("catch", "finally")), f"try sans catch/finally ligne {line}"

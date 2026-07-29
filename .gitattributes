@@ -1,0 +1,17 @@
+# Normalisation des fins de ligne et encodages.
+
+* text=auto
+
+# Les scripts PowerShell doivent conserver CRLF et leur BOM UTF-8 :
+# sans BOM, Windows PowerShell 5.1 lit le fichier en CP1252 et les
+# caractères non-ASCII cassent l'analyse syntaxique.
+*.ps1 text eol=crlf working-tree-encoding=UTF-8
+
+# Les scripts shell exigent LF, y compris sur Windows (WSL, Git Bash).
+*.sh  text eol=lf
+
+# Binaires : aucune conversion.
+*.png binary
+*.jpg binary
+*.parquet binary
+*.gpkg binary

@@ -131,11 +131,27 @@ npm run dev
 | Symptôme | Cause | Solution |
 |---|---|---|
 | Le script rend la main sans rien afficher | `dev.sh` lancé sous PowerShell | Utilisez `.\scripts\dev.ps1` |
+| « Le bloc Catch ou Finally manque » ou « Accolade fermante manquante » | Fichier `.ps1` lu en CP1252 au lieu d'UTF-8 | `git pull` — corrigé depuis. Si l'erreur persiste, votre éditeur a réenregistré le fichier sans BOM : voir la note ci-dessous |
 | « l'exécution de scripts est désactivée » | Politique PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
 | `localhost:5173` refuse la connexion | L'interface n'a pas démarré | Vérifiez que Node est installé : `node --version` |
 | La boutique Microsoft s'ouvre | Alias Python du Store | Installez Python depuis [python.org](https://www.python.org/downloads/) en cochant « Add python.exe to PATH » |
 | `ModuleNotFoundError: pratisig_api` | uvicorn lancé du mauvais dossier | Lancez-le depuis `apps/api` |
 | Erreur d'extension DuckDB au démarrage | Extensions `spatial`/`httpfs` non téléchargées | Vérifiez la connexion ; sans elles, Overture et Open Buildings sont indisponibles, le reste fonctionne |
+
+
+> **Note sur l'encodage des scripts `.ps1`**
+>
+> Windows PowerShell 5.1 (celui installé par défaut) lit un fichier `.ps1`
+> **sans BOM** en CP1252, et non en UTF-8. Un tiret cadratin `—` y devient
+> `â€"` : ce guillemet est pris pour un délimiteur de chaîne et l'analyse
+> syntaxique échoue, avec un message trompeur qui parle d'accolades ou de
+> blocs `try`.
+>
+> `scripts/dev.ps1` est donc enregistré **avec BOM UTF-8** et n'emploie que
+> des tirets ASCII. `.gitattributes` préserve cet encodage, et cinq tests le
+> vérifient à chaque exécution de `dev.sh check`. Si vous modifiez le script,
+> conservez l'encodage « UTF-8 avec BOM ».
+
 
 ### Avec Docker
 

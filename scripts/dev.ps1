@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-    PratiSIG — démarrage local sous Windows.
+    PratiSIG - démarrage local sous Windows.
 
 .DESCRIPTION
     Équivalent PowerShell de scripts/dev.sh.
@@ -39,7 +39,7 @@ function Find-Python {
             $version = & $candidate --version 2>&1
             if ($LASTEXITCODE -eq 0 -and $version -match 'Python 3\.(\d+)') {
                 if ([int]$Matches[1] -ge 10) { return $candidate }
-                Write-Warn "$candidate est en $version — Python 3.10 ou plus récent est requis."
+                Write-Warn "$candidate est en $version - Python 3.10 ou plus récent est requis."
             }
         } catch { }
     }
@@ -92,18 +92,18 @@ switch ($Mode) {
 
     'check' {
         Initialize-Api
-        Write-Info '── Tests ──'
+        Write-Info '-- Tests --'
         Push-Location $ApiDir
         try {
             & $Py -m pytest tests -q
             if ($LASTEXITCODE -ne 0) { Write-Err 'Tests en échec.'; exit 1 }
-            Write-Info '── Lint ──'
+            Write-Info '-- Lint --'
             & $Py -m ruff check pratisig_api tests
             if ($LASTEXITCODE -ne 0) { Write-Err 'Lint en échec.'; exit 1 }
         } finally { Pop-Location }
 
         Initialize-Web
-        Write-Info '── Build interface ──'
+        Write-Info '-- Build interface --'
         Push-Location $WebDir
         try {
             npm run build
@@ -147,7 +147,7 @@ switch ($Mode) {
         if ($ready) {
             Write-Ok 'API prête     : http://localhost:8000/docs'
         } else {
-            Write-Warn "L'API tarde à répondre — consultez la fenêtre ouverte."
+            Write-Warn "L'API tarde à répondre - consultez la fenêtre ouverte."
         }
         Write-Ok 'Interface     : http://localhost:5173'
         Write-Host ''
