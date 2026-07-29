@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import MapView, { BASEMAPS } from './components/MapView';
 import LayerManager from './components/LayerManager';
 import AboutPanel from './components/AboutPanel';
+import ApiBanner from './components/ApiBanner';
+import MapTools from './components/MapTools';
 import DataPanel from './modules/DataPanel';
 import AnalysisPanel from './modules/AnalysisPanel';
 import ThematicPanel from './modules/ThematicPanel';
@@ -13,14 +15,14 @@ import api from './lib/api';
 import './styles/app.css';
 
 const TABS = [
-  { id: 'data', label: 'Données', icon: '⬢' },
-  { id: 'layers', label: 'Couches', icon: '≡' },
-  { id: 'analysis', label: 'Analyse', icon: '◈' },
-  { id: 'thematic', label: 'Thématiques', icon: '◐' },
-  { id: 'agriculture', label: 'Agriculture', icon: '❦' },
-  { id: 'land', label: 'Foncier', icon: '⬛' },
-  { id: 'agent', label: 'Agent', icon: '✦' },
-  { id: 'about', label: 'À propos', icon: '?' },
+  { id: 'data',        label: 'Données',     icon: '📥', hint: 'Charger bâtiments, routes, POI, limites administratives' },
+  { id: 'layers',      label: 'Couches',     icon: '🗂️', hint: 'Styliser, zoomer et exporter les couches chargées' },
+  { id: 'analysis',    label: 'Analyse',     icon: '📐', hint: 'Zone tampon, découpe, itinéraires, accessibilité' },
+  { id: 'thematic',    label: 'Satellite',   icon: '🛰️', hint: 'Imagerie, inondations, climat' },
+  { id: 'agriculture', label: 'Agriculture', icon: '🌾', hint: 'Campagne agricole et aptitude des cultures' },
+  { id: 'land',        label: 'Foncier',     icon: '🏠', hint: 'Évaluer une parcelle avant achat' },
+  { id: 'agent',       label: 'Assistant',   icon: '💬', hint: 'Piloter la carte en langage naturel' },
+  { id: 'about',       label: 'Guide',       icon: 'ℹ️', hint: 'À quoi sert chaque module, et d\'où il vient' },
 ];
 
 export default function App() {
@@ -34,10 +36,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [health, setHealth] = useState(null);
   const [search, setSearch] = useState('');
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [selectedArea, setSelectedArea] = useState(null);
 
-  useEffect(() => {
+  const loadHealth = useCallback(() => {
+    setHealth(null);
     api.health().then(setHealth).catch(() => setHealth({ status: 'unreachable' }));
   }, []);
+
+  useEffect(() => { loadHealth(); }, [loadHealth]);
 
   const notify = useCallback((message, level = 'ok') => {
     setToast({ message, level, key: Date.now() });
@@ -119,6 +126,8 @@ export default function App() {
         )}
       </header>
 
+      <ApiBanner health={health} onRetry={loadHealth} />
+
       <div className="body">
         <aside className={sidebarOpen ? 'sidebar open' : 'sidebar'}>
           <nav className="nav">
@@ -127,7 +136,7 @@ export default function App() {
                 key={t.id}
                 className={tab === t.id ? 'nav-item active' : 'nav-item'}
                 onClick={() => setTab(t.id)}
-                title={t.label}
+                title={`${t.label} — ${t.hint}`}
               >
                 <span className="nav-icon">{t.icon}</span>
                 <span className="nav-label">{t.label}</span>
@@ -139,7 +148,7 @@ export default function App() {
           </nav>
 
           <div className="panel-host">
-            {tab === 'data' && <DataPanel map={map} onLayer={addLayer} notify={notify} />}
+            {tab === 'data' && <DataPanel map={map} area={selectedArea} onLayer={addLayer} notify={notify} />}
             {tab === 'layers' && (
               <LayerManager
                 layers={layers}
@@ -156,10 +165,10 @@ export default function App() {
               <AnalysisPanel map={map} layers={layers} onLayer={addLayer} notify={notify} />
             )}
             {tab === 'thematic' && (
-              <ThematicPanel map={map} onRaster={addRaster} onLayer={addLayer} notify={notify} />
+              <ThematicPanel map={map} point={selectedPoint} area={selectedArea} onRaster={addRaster} onLayer={addLayer} notify={notify} />
             )}
-            {tab === 'agriculture' && <AgriculturePanel map={map} notify={notify} />}
-            {tab === 'land' && <LandPanel map={map} onLayer={addLayer} notify={notify} />}
+            {tab === 'agriculture' && <AgriculturePanel map={map} point={selectedPoint} notify={notify} />}
+            {tab === 'land' && <LandPanel map={map} point={selectedPoint} onLayer={addLayer} notify={notify} />}
             {tab === 'agent' && (
               <AgentPanel map={map} layers={layers} onLayer={addLayer} notify={notify} />
             )}
@@ -175,6 +184,22 @@ export default function App() {
             onMapReady={setMap}
             onFeatureClick={(feature, layer) => setSelected({ feature, layer })}
           />
+
+          <MapTools
+            map={map}
+            notify={notify}
+            onPoint={(p) => { setSelectedPoint(p); setSelectedArea(null); }}
+            onArea={(bbox) => { setSelectedArea(bbox); setSelectedPoint(null); }}
+          />
+
+          {(selectedPoint || selectedArea) && (
+            <div className="selection-chip">
+              {selectedPoint
+                ? `Point : ${selectedPoint.latitude.toFixed(4)}, ${selectedPoint.longitude.toFixed(4)}`
+                : `Zone : ${selectedArea.map((v) => v.toFixed(3)).join(', ')}`}
+              <button className="icon" onClick={() => { setSelectedPoint(null); setSelectedArea(null); }}>×</button>
+            </div>
+          )}
 
           {selected && (
             <div className="inspector">

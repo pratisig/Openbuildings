@@ -6,7 +6,7 @@ import api from '../lib/api';
  * Remplace les applications FloodWatch (floodingsn, innondationSN) et le
  * panneau GEE de openmapagents.
  */
-export default function ThematicPanel({ map, onRaster, onLayer, notify }) {
+export default function ThematicPanel({ map, point, area, onRaster, onLayer, notify }) {
   const [tab, setTab] = useState('raster');
 
   return (
@@ -24,7 +24,7 @@ export default function ThematicPanel({ map, onRaster, onLayer, notify }) {
       </div>
       {tab === 'raster' && <RasterTab map={map} onRaster={onRaster} notify={notify} />}
       {tab === 'flood' && <FloodTab map={map} onRaster={onRaster} notify={notify} />}
-      {tab === 'climate' && <ClimateTab map={map} notify={notify} />}
+      {tab === 'climate' && <ClimateTab map={map} point={point} notify={notify} />}
     </div>
   );
 }
@@ -230,7 +230,7 @@ function FloodTab({ map, onRaster, notify }) {
   );
 }
 
-function ClimateTab({ map, notify }) {
+function ClimateTab({ map, point, notify }) {
   const [start, setStart] = useState('2024-01-01');
   const [end, setEnd] = useState('2024-12-31');
   const [busy, setBusy] = useState(false);
@@ -241,9 +241,10 @@ function ClimateTab({ map, notify }) {
     setBusy(true);
     try {
       const c = map.getCenter();
+      const loc = point || { latitude: c.lat, longitude: c.lng };
       const result = await api.climate({
-        latitude: Math.round(c.lat * 1000) / 1000,
-        longitude: Math.round(c.lng * 1000) / 1000,
+        latitude: Math.round(loc.latitude * 1000) / 1000,
+        longitude: Math.round(loc.longitude * 1000) / 1000,
         start,
         end,
         parameters: ['PRECTOTCORR', 'T2M'],

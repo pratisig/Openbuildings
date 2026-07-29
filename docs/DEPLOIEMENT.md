@@ -126,6 +126,19 @@ npm install
 npm run dev
 ```
 
+### Avertissement de sécurité
+
+`scripts/dev.ps1` n'appelle **jamais** `Start-Process`, `Invoke-Expression`
+(`iex`) ni aucun binaire résolu via le `PATH`. Python et npm sont invoqués par
+chemin absolu.
+
+Si un script inconnu s'ouvre au lancement — en particulier un script contenant
+`iex`, `FromBase64String` ou une lecture de `System32\system.dat` — **ce n'est
+pas un fichier de ce dépôt**. C'est le signe que le `PATH` ou l'association
+des fichiers `.ps1` a été détourné sur la machine. Déconnectez-la du réseau,
+lancez une analyse antivirus hors ligne et changez vos mots de passe depuis un
+autre appareil.
+
 ### Si ça ne marche pas
 
 **Commencez par le diagnostic** — il vérifie Python, Node et les variables
@@ -141,6 +154,8 @@ d'environnement problématiques :
 | « Le bloc Catch ou Finally manque » ou « Accolade fermante manquante » | Fichier `.ps1` lu en CP1252 au lieu d'UTF-8 | `git pull` — corrigé depuis. Si l'erreur persiste, votre éditeur a réenregistré le fichier sans BOM : voir la note ci-dessous |
 | « Could not find platform independent libraries `<prefix>` » | Variable `PYTHONHOME` héritée d'une autre installation Python | Voir ci-dessous |
 | « NativeCommandError » alors que la commande semble réussir | PowerShell traite la sortie stderr comme une erreur | `git pull` — corrigé depuis |
+| Un script inconnu s'ouvre au lancement | `PATH` ou association `.ps1` détournée sur la machine | Voir l'avertissement de sécurité ci-dessus |
+| Listes déroulantes vides, « internal server error » partout | L'API n'est pas démarrée | La bannière rouge en haut de l'interface le signale et donne la commande |
 | « l'exécution de scripts est désactivée » | Politique PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
 | `localhost:5173` refuse la connexion | L'interface n'a pas démarré | Vérifiez que Node est installé : `node --version` |
 | La boutique Microsoft s'ouvre | Alias Python du Store | Installez Python depuis [python.org](https://www.python.org/downloads/) en cochant « Add python.exe to PATH » |

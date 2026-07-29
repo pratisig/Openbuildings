@@ -255,13 +255,16 @@ switch ($Mode) {
         Initialize-Api
         Initialize-Web
 
-        # Chaque service dans sa fenetre : journaux lisibles, et Ctrl+C
-        # n'arrete que l'interface.
-        Write-Info "Demarrage de l'API dans une nouvelle fenetre..."
-        Start-Process powershell -ArgumentList @(
-            '-NoExit', '-Command',
-            "Set-Location '$ApiDir'; & '$Py' -m uvicorn pratisig_api.main:app --reload --port 8000"
-        )
+        # Note de securite : ce script n'ouvre AUCUNE nouvelle fenetre et
+        # n'appelle jamais Start-Process. Les binaires sont invoques par chemin
+        # absolu ($Py, npm.cmd), jamais par un nom resolu via le PATH.
+        Write-Info "Demarrage de l'API en arriere-plan..."
+
+        $apiJob = Start-Job -ScriptBlock {
+            param($dir, $python)
+            Set-Location $dir
+            & $python -m uvicorn pratisig_api.main:app --port 8000 2>&1
+        } -ArgumentList $ApiDir, $Py
 
         Write-Info "Attente de l'API..."
         $ready = $false
@@ -277,17 +280,25 @@ switch ($Mode) {
         if ($ready) {
             Write-Ok 'API prete     : http://localhost:8000/docs'
         } else {
-            Write-Warn "L'API tarde a repondre - consultez la fenetre ouverte."
+            Write-Warn "L'API tarde a repondre. Journal :"
+            Receive-Job $apiJob | Select-Object -Last 20 | ForEach-Object { Write-Host $_ }
         }
         Write-Ok 'Interface     : http://localhost:5173'
         Write-Host ''
-        Write-Info 'Ctrl+C pour arreter l''interface (fermez l''autre fenetre pour l''API).'
+        Write-Info 'Ctrl+C arrete les deux services.'
+
+        # Arret propre du job API quand l'interface se termine
+        $stopApi = {
+            if ($apiJob) { Stop-Job $apiJob -ErrorAction SilentlyContinue; Remove-Job $apiJob -Force -ErrorAction SilentlyContinue }
+        }
+        Register-EngineEvent PowerShell.Exiting -Action $stopApi | Out-Null
 
         Push-Location $WebDir
         try {
             & npm.cmd run dev
         } finally {
             Pop-Location
+            & $stopApi
         }
     }
 }

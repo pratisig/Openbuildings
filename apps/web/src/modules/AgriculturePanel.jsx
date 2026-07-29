@@ -6,7 +6,7 @@ import api from '../lib/api';
  * Analyse de campagne (degrés-jours, bilan hydrique, stress, rendement)
  * et classement des cultures adaptées à un lieu.
  */
-export default function AgriculturePanel({ map, notify }) {
+export default function AgriculturePanel({ map, point, notify }) {
   const [tab, setTab] = useState('season');
 
   return (
@@ -21,8 +21,8 @@ export default function AgriculturePanel({ map, notify }) {
           </button>
         ))}
       </div>
-      {tab === 'season' && <SeasonTab map={map} notify={notify} />}
-      {tab === 'suitability' && <SuitabilityTab map={map} notify={notify} />}
+      {tab === 'season' && <SeasonTab map={map} point={point} notify={notify} />}
+      {tab === 'suitability' && <SuitabilityTab map={map} point={point} notify={notify} />}
     </div>
   );
 }
@@ -37,7 +37,7 @@ function useCrops() {
   return { crops, soils };
 }
 
-function SeasonTab({ map, notify }) {
+function SeasonTab({ map, point, notify }) {
   const { crops, soils } = useCrops();
   const [crop, setCrop] = useState('mil');
   const [sowing, setSowing] = useState('2024-07-01');
@@ -51,10 +51,11 @@ function SeasonTab({ map, notify }) {
     setResult(null);
     try {
       const c = map.getCenter();
+      const loc = point || { latitude: c.lat, longitude: c.lng };
       const data = await api.agricultureSeason({
         crop,
-        latitude: Math.round(c.lat * 1000) / 1000,
-        longitude: Math.round(c.lng * 1000) / 1000,
+        latitude: Math.round(loc.latitude * 1000) / 1000,
+        longitude: Math.round(loc.longitude * 1000) / 1000,
         sowing_date: sowing,
         soil: soil || undefined,
       });
@@ -155,7 +156,7 @@ function StressBars({ stress }) {
   );
 }
 
-function SuitabilityTab({ map, notify }) {
+function SuitabilityTab({ map, point, notify }) {
   const { soils } = useCrops();
   const [year, setYear] = useState(new Date().getFullYear() - 1);
   const [soil, setSoil] = useState('');
@@ -168,9 +169,10 @@ function SuitabilityTab({ map, notify }) {
     setResult(null);
     try {
       const c = map.getCenter();
+      const loc = point || { latitude: c.lat, longitude: c.lng };
       const data = await api.agricultureSuitability({
-        latitude: Math.round(c.lat * 1000) / 1000,
-        longitude: Math.round(c.lng * 1000) / 1000,
+        latitude: Math.round(loc.latitude * 1000) / 1000,
+        longitude: Math.round(loc.longitude * 1000) / 1000,
         year: Number(year),
         soil: soil || undefined,
       });

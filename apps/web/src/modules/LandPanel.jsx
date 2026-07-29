@@ -5,7 +5,7 @@ import api from '../lib/api';
  * Panneau « Foncier » — reprend TerraCheck Sénégal.
  * Évaluation multicritère d'une parcelle et comparaison de candidates.
  */
-export default function LandPanel({ map, onLayer, notify }) {
+export default function LandPanel({ map, point, onLayer, notify }) {
   const [cities, setCities] = useState([]);
   const [city, setCity] = useState('dakar');
   const [busy, setBusy] = useState(false);
@@ -17,7 +17,9 @@ export default function LandPanel({ map, onLayer, notify }) {
     api.landReferences().then((d) => setCities(d.cities)).catch(() => {});
   }, []);
 
+  // Priorité au point choisi avec l'outil « Point » ; sinon centre de la carte.
   function currentPoint() {
+    if (point) return point;
     if (!map) return null;
     const c = map.getCenter();
     return { latitude: Math.round(c.lat * 100000) / 100000, longitude: Math.round(c.lng * 100000) / 100000 };
@@ -93,7 +95,12 @@ export default function LandPanel({ map, onLayer, notify }) {
     <div className="panel">
       <div className="form">
         <p className="hint">
-          Évalue le point au centre de la carte : inondation, topographie, occupation du sol,
+          {point
+            ? `Point choisi : ${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`
+            : 'Aucun point choisi — le centre de la carte sera utilisé. Utilisez l\'outil « Point » en haut à gauche de la carte pour en désigner un.'}
+        </p>
+        <p className="hint">
+          Évalue le point : inondation, topographie, occupation du sol,
           accès et services. Une source indisponible ne pénalise pas la parcelle — son poids
           est redistribué.
         </p>

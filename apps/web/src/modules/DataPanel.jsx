@@ -6,7 +6,7 @@ import api, { areaFromCenter } from '../lib/api';
  * l'app Streamlit Open Buildings, l'explorateur Overture, l'extraction OSM
  * de city-roads et le sélecteur administratif de Carto-facileSN.
  */
-export default function DataPanel({ map, onLayer, notify }) {
+export default function DataPanel({ map, area, onLayer, notify }) {
   const [tab, setTab] = useState('buildings');
 
   return (
@@ -23,17 +23,18 @@ export default function DataPanel({ map, onLayer, notify }) {
           </button>
         ))}
       </div>
-      {tab === 'buildings' && <BuildingsTab map={map} onLayer={onLayer} notify={notify} />}
-      {tab === 'overture' && <OvertureTab map={map} onLayer={onLayer} notify={notify} />}
-      {tab === 'osm' && <OsmTab map={map} onLayer={onLayer} notify={notify} />}
+      {tab === 'buildings' && <BuildingsTab map={map} area={area} onLayer={onLayer} notify={notify} />}
+      {tab === 'overture' && <OvertureTab map={map} area={area} onLayer={onLayer} notify={notify} />}
+      {tab === 'osm' && <OsmTab map={map} area={area} onLayer={onLayer} notify={notify} />}
       {tab === 'admin' && <AdminTab onLayer={onLayer} notify={notify} />}
     </div>
   );
 }
 
-function useMapArea(map) {
-  /** Zone courante : l'emprise visible, ou un rayon autour du centre. */
+function useMapArea(map, drawn) {
+  /** Zone d'étude : celle dessinée si elle existe, sinon l'emprise visible. */
   return (mode, radiusKm) => {
+    if (drawn) return { bbox: drawn };
     if (!map) return null;
     if (mode === 'radius') {
       const c = map.getCenter();
@@ -44,14 +45,14 @@ function useMapArea(map) {
   };
 }
 
-function BuildingsTab({ map, onLayer, notify }) {
+function BuildingsTab({ map, area, onLayer, notify }) {
   const [countries, setCountries] = useState([]);
   const [iso3, setIso3] = useState('SEN');
   const [confidence, setConfidence] = useState(0.7);
   const [limit, setLimit] = useState(3000);
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState(null);
-  const getArea = useMapArea(map);
+  const getArea = useMapArea(map, area);
 
   useEffect(() => {
     api.countries().then((d) => setCountries(d.countries)).catch(() => {});
@@ -146,13 +147,13 @@ function BuildingsTab({ map, onLayer, notify }) {
   );
 }
 
-function OvertureTab({ map, onLayer, notify }) {
+function OvertureTab({ map, area, onLayer, notify }) {
   const [themes, setThemes] = useState({});
   const [theme, setTheme] = useState('places');
   const [category, setCategory] = useState('');
   const [limit, setLimit] = useState(1000);
   const [busy, setBusy] = useState(false);
-  const getArea = useMapArea(map);
+  const getArea = useMapArea(map, area);
 
   useEffect(() => {
     api.overtureThemes().then((d) => setThemes(d.themes)).catch(() => {});
@@ -211,11 +212,11 @@ function OvertureTab({ map, onLayer, notify }) {
   );
 }
 
-function OsmTab({ map, onLayer, notify }) {
+function OsmTab({ map, area, onLayer, notify }) {
   const [presets, setPresets] = useState([]);
   const [preset, setPreset] = useState('health');
   const [busy, setBusy] = useState(false);
-  const getArea = useMapArea(map);
+  const getArea = useMapArea(map, area);
 
   useEffect(() => {
     api.osmPresets().then((d) => setPresets(d.presets)).catch(() => {});

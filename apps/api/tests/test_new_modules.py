@@ -582,3 +582,30 @@ class TestWindowsScript:
         src = self.SCRIPT.read_text(encoding="utf-8-sig")
         assert "'doctor'" in src
         assert "PYTHONHOME" in src, "le diagnostic doit signaler PYTHONHOME"
+
+    def test_no_start_process(self):
+        """Le script ne doit jamais lancer un binaire resolu via le PATH.
+
+        Incident : `Start-Process powershell` a ouvert, sur le poste d'un
+        utilisateur, un script malveillant au lieu de PowerShell -- signe
+        d'un PATH ou d'une association de fichiers detournee. Le script
+        utilise desormais Start-Job et n'invoque que des chemins absolus.
+        """
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"^\s*#.*$", "", src, flags=re.M)
+        assert "Start-Process" not in code, (
+            "Start-Process resout son argument via le PATH : utiliser Start-Job."
+        )
+
+    def test_invokes_python_by_absolute_path(self):
+        """python/uvicorn doivent etre appeles via $Py (chemin absolu du venv)."""
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"^\s*#.*$", "", src, flags=re.M)
+        assert "$Py = Join-Path $Venv" in code or "$Py     = Join-Path $Venv" in code
+        assert not re.search(r"^\s*&\s*python(\.exe)?\s", code, re.M), (
+            "ne jamais appeler 'python' par son nom : utiliser $Py"
+        )

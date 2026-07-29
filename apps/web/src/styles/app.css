@@ -1,14 +1,16 @@
 :root {
-  --bg: #0f1419;
-  --surface: #171d24;
-  --surface-2: #1e262f;
-  --border: #2a3540;
-  --text: #e6edf3;
-  --text-dim: #8b98a5;
-  --accent: #2a9d8f;
-  --accent-2: #457b9d;
-  --danger: #e63946;
-  --warn: #e9c46a;
+  /* Thème clair : plus lisible et moins fatigant pour un usage cartographique
+     prolongé. La carte reste l'élément visuellement dominant. */
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f3f6;
+  --border: #d8dee6;
+  --text: #1c2530;
+  --text-dim: #64748b;
+  --accent: #0f766e;
+  --accent-2: #1d4ed8;
+  --danger: #dc2626;
+  --warn: #b45309;
   --radius: 6px;
 }
 
@@ -27,6 +29,7 @@ body {
 
 /* ── En-tête ─────────────────────────────────────────── */
 .header {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -71,12 +74,12 @@ body {
   transition: width 0.18s ease;
   flex-shrink: 0;
 }
-.sidebar.open { width: 380px; }
+.sidebar.open { width: 400px; }
 
 .nav {
   display: flex; flex-direction: column;
-  width: 62px; flex-shrink: 0;
-  background: var(--bg);
+  width: 76px; flex-shrink: 0;
+  background: var(--surface-2);
   border-right: 1px solid var(--border);
   padding-top: 6px;
 }
@@ -85,11 +88,11 @@ body {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 9px 4px; margin: 2px 5px;
   background: none; border: none; border-radius: var(--radius);
-  color: var(--text-dim); cursor: pointer; font-size: 10px;
+  color: var(--text-dim); cursor: pointer; font-size: 10.5px; line-height: 1.25;
 }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
 .nav-item.active { background: var(--accent); color: #fff; }
-.nav-icon { font-size: 16px; }
+.nav-icon { font-size: 19px; }
 .nav-badge {
   position: absolute; top: 4px; right: 6px;
   background: var(--accent-2); color: #fff;
@@ -332,3 +335,70 @@ hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; width: 10
 }
 .warn-text { color: var(--warn); }
 .disclaimer { font-style: italic; opacity: 0.8; border-top: 1px solid var(--border); padding-top: 8px; }
+
+
+/* ── Bannière d'état de l'API ────────────────────────── */
+.api-banner {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 11px 16px; font-size: 12.5px; line-height: 1.5;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.api-banner.loading { background: var(--surface-2); color: var(--text-dim); align-items: center; }
+.api-banner.error   { background: #fef2f2; border-bottom-color: #fca5a5; color: #7f1d1d; }
+.api-banner.warn    { background: #fffbeb; border-bottom-color: #fcd34d; color: #78350f; }
+.api-banner b { display: block; margin-bottom: 3px; }
+.api-banner p { margin: 3px 0; }
+.api-banner button { flex-shrink: 0; }
+.banner-fix { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
+.banner-fix code {
+  background: rgba(0,0,0,0.07); padding: 3px 7px; border-radius: 4px;
+  font-size: 11px; width: fit-content; max-width: 100%; overflow-x: auto;
+}
+.banner-note { font-size: 11px; opacity: 0.85; }
+.spinner {
+  width: 13px; height: 13px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  display: inline-block; margin-right: 8px; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Outils de carte ─────────────────────────────────── */
+.map-tools {
+  position: absolute; top: 12px; left: 12px; z-index: 6;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.map-tool {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 13px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.map-tool:hover { border-color: var(--accent); }
+.map-tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tool-icon { font-size: 14px; }
+.map-tool-hint {
+  display: flex; flex-direction: column;
+  background: var(--accent); color: #fff;
+  padding: 7px 11px; border-radius: var(--radius);
+  font-size: 11.5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.map-tool-hint small { opacity: 0.85; font-size: 10px; margin-top: 2px; }
+.draw-box {
+  position: absolute; background: rgba(15, 118, 110, 0.15);
+  border: 2px dashed var(--accent); pointer-events: none; z-index: 5;
+}
+
+/* ── Sélection active ────────────────────────────────── */
+.selection-chip {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 9px; z-index: 6;
+  background: var(--surface); border: 1px solid var(--accent);
+  border-radius: 16px; padding: 6px 8px 6px 14px;
+  font-size: 11.5px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* ── Lisibilité en thème clair ───────────────────────── */
+.inspector, .toast { box-shadow: 0 4px 18px rgba(0,0,0,0.15); }
+.msg.user .msg-content { color: #fff; }
+.notice code { background: rgba(0,0,0,0.07); }
