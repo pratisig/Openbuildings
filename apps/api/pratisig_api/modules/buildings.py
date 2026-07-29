@@ -95,6 +95,18 @@ def _load_countries() -> list[dict[str, Any]]:
     return cache.memoize(CACHE_NS, "countries-index", produce, ttl=0)
 
 
+# Schema reel du GeoParquet VIDA, releve le 29/07/2026 sur le fichier SEN :
+#   boundary_id BIGINT · bf_source VARCHAR · confidence DOUBLE
+#   area_in_meters DOUBLE · s2_id BIGINT · country_iso VARCHAR
+#   geohash VARCHAR · geometry GEOMETRY · bbox STRUCT(xmin, ymin, xmax, ymax)
+# La cle primaire est `boundary_id`, pas `id` : interroger `id` provoquait
+# un « Binder Error » et rendait tout le module inutilisable.
+BUILDINGS_COLUMNS = (
+    "boundary_id", "bf_source", "confidence", "area_in_meters",
+    "s2_id", "country_iso", "geohash", "geometry", "bbox",
+)
+
+
 def _build_sql(iso3: str, bbox: BBox | None, min_confidence: float, min_area: float, limit: int) -> str:
     where: list[str] = []
     if bbox is not None:
@@ -110,10 +122,11 @@ def _build_sql(iso3: str, bbox: BBox | None, min_confidence: float, min_area: fl
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     return f"""
         SELECT
-            id,
+            boundary_id AS id,
             confidence,
             area_in_meters,
             bf_source AS source,
+            s2_id,
             ST_AsGeoJSON(geometry) AS geom_json
         FROM read_parquet('{_parquet_url(iso3)}')
         {clause}

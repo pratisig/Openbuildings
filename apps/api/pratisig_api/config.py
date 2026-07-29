@@ -60,8 +60,15 @@ class Settings(BaseSettings):
     duckdb_extensions: list[str] = Field(default_factory=lambda: ["spatial", "httpfs"])
 
     # ── Overture Maps ──────────────────────────────────────────────
-    overture_release: str = "2025-01-22.0"
+    overture_release: str = "2025-06-25.0"
+    # Le bucket S3 d'Overture est en mode « requester pays » : DuckDB ne peut
+    # pas le lire sans identifiants AWS, d'ou les « No files found » observes.
+    # L'acces HTTPS public fonctionne sans authentification et reste le
+    # comportement par defaut. Mettre overture_use_s3=true si des identifiants
+    # AWS sont configures sur la machine.
+    overture_use_s3: bool = False
     overture_s3_base: str = "s3://overturemaps-us-west-2/release"
+    overture_https_base: str = "https://overturemaps-us-west-2.s3.amazonaws.com/release"
     overture_s3_region: str = "us-west-2"
 
     # ── Open Buildings (VIDA Google + Microsoft) ───────────────────
@@ -106,7 +113,8 @@ class Settings(BaseSettings):
 
     @property
     def overture_release_path(self) -> str:
-        return f"{self.overture_s3_base}/{self.overture_release}"
+        base = self.overture_s3_base if self.overture_use_s3 else self.overture_https_base
+        return f"{base}/{self.overture_release}"
 
     def ensure_dirs(self) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)

@@ -761,3 +761,68 @@ class TestDiagnoseScript:
         src = self.SCRIPT.read_text(encoding="utf-8")
         assert "CANDIDATE_RELEASES" in src
         assert src.count('"20') >= 5, "tester plusieurs versions Overture"
+
+
+class TestBuildingsSchema:
+    """Le SQL doit correspondre au schema reel du GeoParquet VIDA.
+
+    Regression : la requete demandait `id`, colonne inexistante. La cle
+    primaire s'appelle `boundary_id`. Resultat : « Binder Error » et module
+    inutilisable. Schema releve en conditions reelles le 29/07/2026.
+    """
+
+    MODULE = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "pratisig_api" / "modules" / "buildings.py"
+    )
+
+    def test_uses_boundary_id(self):
+        src = self.MODULE.read_text(encoding="utf-8")
+        assert "boundary_id AS id" in src, "la cle primaire est boundary_id"
+
+    def test_never_selects_bare_id(self):
+        import re
+
+        src = self.MODULE.read_text(encoding="utf-8")
+        sql_blocks = re.findall(r"SELECT(.*?)FROM read_parquet", src, re.S)
+        for block in sql_blocks:
+            for line in block.split("\n"):
+                stripped = line.strip().rstrip(",")
+                assert stripped != "id", "colonne `id` inexistante dans le dataset"
+
+    def test_documented_schema_matches(self):
+        from pratisig_api.modules.buildings import BUILDINGS_COLUMNS
+
+        # Colonnes reellement presentes, relevees sur le fichier SEN
+        assert set(BUILDINGS_COLUMNS) == {
+            "boundary_id", "bf_source", "confidence", "area_in_meters",
+            "s2_id", "country_iso", "geohash", "geometry", "bbox",
+        }
+        assert "id" not in BUILDINGS_COLUMNS
+
+
+class TestOvertureAccess:
+    """Overture doit utiliser l'acces HTTPS public par defaut.
+
+    Regression : le bucket S3 est en mode « requester pays ». Sans
+    identifiants AWS, DuckDB renvoie « No files found » pour toutes les
+    versions -- le message laisse croire a une mauvaise version.
+    """
+
+    def test_https_is_default(self):
+        from pratisig_api.config import settings
+
+        assert settings.overture_use_s3 is False
+        assert settings.overture_release_path.startswith("https://")
+
+    def test_s3_still_available(self):
+        """L'acces S3 reste possible pour qui dispose d'identifiants AWS."""
+        from pratisig_api.config import Settings
+
+        configured = Settings(overture_use_s3=True)
+        assert configured.overture_release_path.startswith("s3://")
+
+    def test_release_path_includes_version(self):
+        from pratisig_api.config import settings
+
+        assert settings.overture_release in settings.overture_release_path
