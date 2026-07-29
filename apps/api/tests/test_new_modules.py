@@ -716,3 +716,48 @@ class TestSmokeTestScript:
         import ast
 
         ast.parse(self.SCRIPT.read_text(encoding="utf-8"))
+
+
+class TestOverpassFailover:
+    """Overpass doit basculer sur un miroir quand l'instance principale echoue.
+
+    Constate en conditions reelles : overpass-api.de renvoie des HTTP 504
+    aux heures chargees. Avec un seul point d'acces, le module OSM et
+    l'analyse fonciere tombaient tous les deux.
+    """
+
+    def test_several_mirrors_configured(self):
+        from pratisig_api.config import settings
+
+        assert len(settings.overpass_mirrors) >= 3, "prevoir au moins 3 miroirs"
+        assert all(m.startswith("https://") for m in settings.overpass_mirrors)
+
+    def test_modules_use_failover(self):
+        root = pathlib.Path(__file__).resolve().parents[1] / "pratisig_api" / "modules"
+        for name in ("osm.py", "land.py"):
+            src = (root / name).read_text(encoding="utf-8")
+            assert "post_json_failover" in src, f"{name} doit utiliser la bascule"
+
+    def test_failover_helper_exists(self):
+        from pratisig_api.core.http import post_json_failover
+
+        assert callable(post_json_failover)
+
+
+class TestDiagnoseScript:
+    """Le script de diagnostic DuckDB doit rester valide."""
+
+    SCRIPT = (
+        pathlib.Path(__file__).resolve().parents[3] / "scripts" / "diagnose_duckdb.py"
+    )
+
+    def test_exists_and_parses(self):
+        import ast
+
+        assert self.SCRIPT.exists()
+        ast.parse(self.SCRIPT.read_text(encoding="utf-8"))
+
+    def test_probes_multiple_releases(self):
+        src = self.SCRIPT.read_text(encoding="utf-8")
+        assert "CANDIDATE_RELEASES" in src
+        assert src.count('"20') >= 5, "tester plusieurs versions Overture"

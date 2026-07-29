@@ -62,7 +62,9 @@ async def get_json(service: str, url: str, **kwargs: Any) -> Any:
         raise UpstreamError(service, "réponse JSON invalide") from exc
 
 
-async def post_json(service: str, url: str, **kwargs: Any) -> Any:
+async def post_json(service: str, url: str, timeout: float | None = None, **kwargs: Any) -> Any:
+    if timeout is not None:
+        kwargs["timeout"] = httpx.Timeout(timeout)
     try:
         resp = await get_client().post(url, **kwargs)
         resp.raise_for_status()
@@ -75,3 +77,26 @@ async def post_json(service: str, url: str, **kwargs: Any) -> Any:
         raise UpstreamError(service, str(exc)) from exc
     except ValueError as exc:
         raise UpstreamError(service, "réponse JSON invalide") from exc
+
+
+async def post_json_failover(service: str, urls: list[str], **kwargs: Any) -> Any:
+    """Interroge plusieurs miroirs jusqu'a obtenir une reponse.
+
+    Overpass renvoie frequemment des 504 (passerelle expiree) sur son
+    instance principale aux heures chargees. Basculer sur un miroir est la
+    seule facon d'obtenir un service fiable. Principe repris de
+    `pratisig/terracheck-senegal`, qui listait deja trois points d'acces.
+    """
+    last: UpstreamError | None = None
+    for index, url in enumerate(urls):
+        try:
+            return await post_json(service, url, **kwargs)
+        except UpstreamError as exc:
+            last = exc
+            remaining = len(urls) - index - 1
+            if remaining:
+                log.warning(
+                    "%s indisponible (%s), essai du miroir suivant (%d restants)",
+                    url, exc.detail, remaining,
+                )
+    raise last or UpstreamError(service, "aucun miroir disponible")

@@ -72,7 +72,17 @@ class Settings(BaseSettings):
 
     # ── Services externes ──────────────────────────────────────────
     nominatim_url: str = "https://nominatim.openstreetmap.org"
+    # Plusieurs miroirs Overpass : l'instance principale renvoie
+    # regulierement des 504 aux heures chargees. Essayes dans l'ordre.
     overpass_url: str = "https://overpass-api.de/api/interpreter"
+    overpass_mirrors: list[str] = Field(
+        default_factory=lambda: [
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+        ]
+    )
     osrm_url: str = "https://router.project-osrm.org"
     nasa_power_url: str = "https://power.larc.nasa.gov/api/temporal/daily/point"
     gadm_base_url: str = "https://geodata.ucdavis.edu/gadm/gadm4.1/json"

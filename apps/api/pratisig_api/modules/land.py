@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..core import cache
 from ..core.geo import haversine_m
-from ..core.http import UpstreamError, get_json, post_json
+from ..core.http import UpstreamError, get_json, post_json_failover
 
 log = logging.getLogger("pratisig.land")
 router = APIRouter(prefix="/api/land", tags=["foncier"])
@@ -269,7 +269,7 @@ out center tags 200;"""
         return cached
 
     try:
-        data = await post_json("overpass", settings.overpass_url, data={"data": query})
+        data = await post_json_failover("overpass", settings.overpass_mirrors, data={"data": query})
     except UpstreamError as exc:
         log.warning("Équipements OSM indisponibles : %s", exc)
         return None
@@ -370,7 +370,7 @@ out tags 120;"""
         return cached
 
     try:
-        data = await post_json("overpass", settings.overpass_url, data={"data": query})
+        data = await post_json_failover("overpass", settings.overpass_mirrors, data={"data": query})
     except UpstreamError as exc:
         log.warning("Occupation du sol indisponible : %s", exc)
         return None

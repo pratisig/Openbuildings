@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..core import cache
 from ..core.geo import BBox, feature, geometry_length_m
-from ..core.http import UpstreamError, post_json
+from ..core.http import UpstreamError, post_json_failover
 from ..core.schemas import AreaOfInterest
 
 log = logging.getLogger("pratisig.osm")
@@ -89,7 +89,12 @@ class OSMQuery(BaseModel):
     custom_filter: str | None = Field(None, description="Filtre Overpass brut, ex: way[\"amenity\"=\"bank\"]")
     area: AreaOfInterest
     limit: int = Field(5_000, ge=1, le=50_000)
-    timeout: int = Field(60, ge=10, le=180)
+    timeout: int = Field(
+        45,
+        ge=10,
+        le=180,
+        description="Delai accorde a Overpass. Le client attend un peu plus longtemps.",
+    )
 
 
 def _build_overpass(filter_expr: str, bbox: BBox, limit: int, timeout: int) -> str:
@@ -163,7 +168,12 @@ async def query_osm(payload: OSMQuery) -> dict[str, Any]:
         return cached
 
     try:
-        raw = await post_json("overpass", settings.overpass_url, data={"data": query})
+        raw = await post_json_failover(
+            "overpass",
+            settings.overpass_mirrors,
+            data={"data": query},
+            timeout=payload.timeout + 20,
+        )
     except UpstreamError as exc:
         raise HTTPException(exc.status_code, f"Overpass : {exc.detail}") from exc
 
