@@ -243,12 +243,9 @@ switch ($Mode) {
         Initialize-Api
         Write-Ok 'API : http://localhost:8000/docs'
         Write-Info 'Ctrl+C pour arreter.'
-        Push-Location $ApiDir
-        try {
-            & $Py -m uvicorn pratisig_api.main:app --reload --port 8000
-        } finally {
-            Pop-Location
-        }
+        # --app-dir evite de changer de repertoire : les chemins relatifs
+        # restent valides quel que soit l'endroit d'ou le script est lance.
+        & $Py -m uvicorn pratisig_api.main:app --reload --port 8000 --app-dir $ApiDir
     }
 
     'all' {
@@ -262,8 +259,7 @@ switch ($Mode) {
 
         $apiJob = Start-Job -ScriptBlock {
             param($dir, $python)
-            Set-Location $dir
-            & $python -m uvicorn pratisig_api.main:app --port 8000 2>&1
+            & $python -m uvicorn pratisig_api.main:app --port 8000 --app-dir $dir 2>&1
         } -ArgumentList $ApiDir, $Py
 
         Write-Info "Attente de l'API..."

@@ -100,22 +100,22 @@ Windows) :
 
 Utile si un script échoue, ou pour comprendre ce qu'il fait. **Deux terminaux.**
 
-Terminal 1 — l'API :
+Terminal 1 — l'API. **Toutes ces commandes se lancent depuis la racine du
+projet** : l'option `--app-dir` évite de changer de dossier, et donc les
+erreurs de chemin relatif.
 
 ```powershell
 # Windows
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r apps\api\requirements.txt
-cd apps\api
-..\..\.venv\Scripts\python.exe -m uvicorn pratisig_api.main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m uvicorn pratisig_api.main:app --port 8000 --app-dir apps\api
 ```
 
 ```bash
 # macOS / Linux
 python3 -m venv .venv
 ./.venv/bin/pip install -r apps/api/requirements.txt
-cd apps/api
-../../.venv/bin/python -m uvicorn pratisig_api.main:app --reload --port 8000
+./.venv/bin/python -m uvicorn pratisig_api.main:app --port 8000 --app-dir apps/api
 ```
 
 Terminal 2 — l'interface :
@@ -159,7 +159,8 @@ d'environnement problématiques :
 | « l'exécution de scripts est désactivée » | Politique PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
 | `localhost:5173` refuse la connexion | L'interface n'a pas démarré | Vérifiez que Node est installé : `node --version` |
 | La boutique Microsoft s'ouvre | Alias Python du Store | Installez Python depuis [python.org](https://www.python.org/downloads/) en cochant « Add python.exe to PATH » |
-| `ModuleNotFoundError: pratisig_api` | uvicorn lancé du mauvais dossier | Lancez-le depuis `apps/api` |
+| `ModuleNotFoundError: pratisig_api` | uvicorn lancé du mauvais dossier | Ajoutez `--app-dir apps\api` et lancez depuis la racine |
+| `..\..\.venv\Scripts\python.exe n'est pas reconnu` | Chemin relatif dépendant du dossier courant | Depuis la racine : `.\.venv\Scripts\python.exe` (un seul point) |
 | Erreur d'extension DuckDB au démarrage | Extensions `spatial`/`httpfs` non téléchargées | Vérifiez la connexion ; sans elles, Overture et Open Buildings sont indisponibles, le reste fonctionne |
 
 
