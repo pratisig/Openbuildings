@@ -609,3 +609,39 @@ class TestWindowsScript:
         assert not re.search(r"^\s*&\s*python(\.exe)?\s", code, re.M), (
             "ne jamais appeler 'python' par son nom : utiliser $Py"
         )
+
+
+class TestSecurityCheckScript:
+    """Le script de diagnostic securite doit rester inoffensif et lisible."""
+
+    SCRIPT = (
+        pathlib.Path(__file__).resolve().parents[3] / "scripts" / "security-check.ps1"
+    )
+
+    def test_exists_with_bom(self):
+        raw = self.SCRIPT.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf"), "BOM UTF-8 requis pour PowerShell 5.1"
+
+    def test_is_read_only(self):
+        """Aucune modification du systeme : c'est une collecte de preuves."""
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"<#.*?#>", "", src, flags=re.S)
+        code = re.sub(r"^\s*#.*$", "", code, flags=re.M)
+        for verb in ("Remove-Item", "Set-ItemProperty", "Stop-Process", "Unregister-", "Del "):
+            assert verb not in code, f"{verb} modifie le systeme : interdit ici"
+
+    def test_never_executes_the_payload(self):
+        """Le contenu de system.dat ne doit jamais etre execute, seulement decrit."""
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"^\s*#.*$", "", src, flags=re.M)
+        for danger in ("Invoke-Expression", "iex ", "FromBase64String", "-bxor"):
+            assert danger not in code, f"{danger} ne doit pas apparaitre"
+
+    def test_no_characters_breaking_cp1252(self):
+        raw = self.SCRIPT.read_bytes()[3:]
+        decoded = raw.decode("cp1252", errors="replace")
+        assert not {c for c in decoded if c in "\u201c\u201d\u2018\u2019"}
