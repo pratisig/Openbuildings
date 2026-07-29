@@ -47,6 +47,20 @@ class IsochroneRequest(BaseModel):
     center: list[float] = Field(..., min_length=2, max_length=2)
     minutes: list[int] = Field(default_factory=lambda: [5, 10, 15], max_length=5)
     profile: Profile = "foot"
+    shape: Literal["alpha", "convex"] = Field(
+        "alpha",
+        description="alpha = contour concave épousant le réseau ; convex = enveloppe convexe",
+    )
+    alpha: float = Field(
+        1.0,
+        ge=0.01,
+        le=5.0,
+        description=(
+            "Finesse de l'alpha-shape : plus la valeur est haute, plus le contour est "
+            "concave et épouse les axes. Au-delà d'un seuil le contour dégénère et la "
+            "plateforme retombe automatiquement sur l'enveloppe convexe."
+        ),
+    )
 
 
 class AccessibilityRequest(BaseModel):
@@ -143,12 +157,17 @@ async def route(payload: RouteRequest) -> dict[str, Any]:
 
 @router.post("/isochrone", summary="Zones d'accessibilité (isochrones)")
 async def isochrone(payload: IsochroneRequest) -> dict[str, Any]:
-    """Isochrone par échantillonnage de la matrice de temps OSRM.
+    """Isochrone par interpolation radiale sur la matrice de temps OSRM.
 
-    On tire des points sur des rayons autour du centre, on interroge OSRM en
-    une seule requête `table`, puis on relie les points atteignables dans le
-    temps imparti. Si OSRM est indisponible, repli sur un cercle basé sur la
-    vitesse moyenne du mode (résultat approximatif, signalé dans metadata).
+    Méthode reprise de `pratisig/sante-isochrones-app`, nettement plus fidèle
+    qu'un simple seuillage : pour chaque azimut on tire des points à deux
+    couronnes, on mesure le temps réseau réel, puis on **interpole la position
+    du front** le long du rayon (`ratio = temps_cible / temps_mesuré`). Le
+    contour épouse ainsi le réseau au lieu de sauter d'un anneau à l'autre.
+
+    Le contour est ensuite fermé par alpha-shape (concave, suit les axes) ou
+    par enveloppe convexe. Sans OSRM, repli sur un cercle géodésique signalé
+    par `approximate: true`.
     """
     lon, lat = _validate_point(payload.center, "center")
     minutes = sorted({m for m in payload.minutes if 0 < m <= 120})
@@ -156,82 +175,102 @@ async def isochrone(payload: IsochroneRequest) -> dict[str, Any]:
         raise HTTPException(400, "Fournir au moins une durée entre 1 et 120 minutes")
 
     profile_meta = PROFILES[payload.profile]
-    key = cache.cache_key("isochrone", round(lon, 5), round(lat, 5), tuple(minutes), payload.profile)
+    key = cache.cache_key(
+        "isochrone",
+        round(lon, 5),
+        round(lat, 5),
+        tuple(minutes),
+        payload.profile,
+        payload.shape,
+        payload.alpha,
+    )
     cached = cache.get(CACHE_NS, key)
     if cached is not None:
         return cached
 
-    max_minutes = max(minutes)
-    max_radius_m = profile_meta["speed_kmh"] * 1000 / 60 * max_minutes * 1.1
-
     import math
 
-    bearings = 24
-    rings = 6
-    samples: list[tuple[float, float]] = []
-    for r_idx in range(1, rings + 1):
-        radius = max_radius_m * r_idx / rings
-        for b_idx in range(bearings):
-            angle = 2 * math.pi * b_idx / bearings
-            dlat = (radius * math.sin(angle)) / 110_574.0
-            dlon = (radius * math.cos(angle)) / (111_320.0 * max(math.cos(math.radians(lat)), 1e-6))
-            samples.append((lon + dlon, lat + dlat))
-
-    durations: list[float] | None = None
-    engine_used = "OSRM"
-    try:
-        coords = ";".join(f"{x},{y}" for x, y in [(lon, lat), *samples])
-        raw = await get_json(
-            "osrm",
-            f"{settings.osrm_url}/table/v1/{profile_meta['osrm']}/{coords}",
-            params={"sources": "0", "annotations": "duration"},
-        )
-        if raw.get("code") == "Ok" and raw.get("durations"):
-            durations = raw["durations"][0][1:]
-    except UpstreamError as exc:
-        log.warning("Matrice OSRM indisponible, repli géométrique : %s", exc)
+    # Échantillonnage : N azimuts × 2 couronnes encadrant le rayon théorique
+    bearings = 36
+    angles = [2 * math.pi * i / bearings for i in range(bearings)]
+    cos_lat = max(math.cos(math.radians(lat)), 1e-6)
 
     features: list[dict[str, Any]] = []
-    if durations:
-        for m in minutes:
-            limit_s = m * 60
-            reachable = [
-                samples[i]
-                for i, d in enumerate(durations)
-                if d is not None and d <= limit_s
-            ]
-            if len(reachable) < 3:
-                radius = profile_meta["speed_kmh"] * 1000 / 60 * m
-                geom = circle_polygon(lon, lat, radius)
-            else:
-                geom = _hull_polygon(lon, lat, reachable)
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": geom,
-                    "properties": {
-                        "minutes": m,
-                        "profile": payload.profile,
-                        "sample_points": len(reachable),
-                    },
-                }
-            )
-    else:
-        engine_used = "approximation géodésique"
-        for m in minutes:
-            radius = profile_meta["speed_kmh"] * 1000 / 60 * m
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": circle_polygon(lon, lat, radius),
-                    "properties": {
-                        "minutes": m,
-                        "profile": payload.profile,
-                        "radius_m": round(radius),
-                        "approximate": True,
-                    },
-                }
-            )
+    engine_used = "OSRM"
+    osrm_failed = False
+
+    for m in minutes:
+        base_radius = profile_meta["speed_kmh"] * 1000 / 60 * m
+        # Deux couronnes : en deçà et au-delà du rayon à vol d'oiseau
+        offsets: list[tuple[float, float]] = []
+        for factor in (0.8, 1.2):
+            radius = base_radius * factor
+            for angle in angles:
+                dlat = (radius * math.sin(angle)) / 110_574.0
+                dlon = (radius * math.cos(angle)) / (111_320.0 * cos_lat)
+                offsets.append((dlon, dlat))
+
+        durations: list[float | None] | None = None
+        if not osrm_failed:
+            try:
+                coords = ";".join(
+                    f"{x:.6f},{y:.6f}"
+                    for x, y in [(lon, lat), *[(lon + dx, lat + dy) for dx, dy in offsets]]
+                )
+                raw = await get_json(
+                    "osrm",
+                    f"{settings.osrm_url}/table/v1/{profile_meta['osrm']}/{coords}",
+                    params={"sources": "0", "annotations": "duration"},
+                )
+                if raw.get("code") == "Ok" and raw.get("durations"):
+                    durations = raw["durations"][0][1:]
+            except UpstreamError as exc:
+                log.warning("Matrice OSRM indisponible, repli géométrique : %s", exc)
+                osrm_failed = True
+
+        if not durations:
+            engine_used = "approximation géodésique"
+            geom = circle_polygon(lon, lat, base_radius)
+            features.append({
+                "type": "Feature",
+                "geometry": geom,
+                "properties": {
+                    "minutes": m,
+                    "profile": payload.profile,
+                    "radius_m": round(base_radius),
+                    "approximate": True,
+                },
+            })
+            continue
+
+        # Interpolation du front d'isochrone le long de chaque rayon
+        target_s = m * 60
+        frontier: list[tuple[float, float]] = []
+        for i, duration in enumerate(durations):
+            dlon, dlat = offsets[i]
+            if duration is None or duration <= 0:
+                continue
+            ratio = min(1.0, target_s / duration)
+            frontier.append((lon + dlon * ratio, lat + dlat * ratio))
+
+        if len(frontier) < 3:
+            geom = circle_polygon(lon, lat, base_radius)
+        elif payload.shape == "alpha":
+            geom = _alpha_shape(frontier, payload.alpha) or _hull_polygon(lon, lat, frontier)
+        else:
+            geom = _hull_polygon(lon, lat, frontier)
+
+        features.append({
+            "type": "Feature",
+            "geometry": geom,
+            "properties": {
+                "minutes": m,
+                "profile": payload.profile,
+                "shape": payload.shape,
+                "sample_points": len(frontier),
+                "area_km2": round(_area_km2(geom), 3),
+            },
+        })
 
     # Ordre décroissant : les grandes zones dessous
     features.sort(key=lambda f: f["properties"]["minutes"], reverse=True)
@@ -249,6 +288,114 @@ async def isochrone(payload: IsochroneRequest) -> dict[str, Any]:
     }
     cache.set(CACHE_NS, key, result)
     return result
+
+
+def _area_km2(geometry: dict[str, Any]) -> float:
+    """Surface d'une isochrone, mesurée en projection locale (mètres).
+
+    `sante-isochrones-app` reprojetait en UTM avant de mesurer : calculer une
+    aire directement en degrés donne un résultat faux.
+    """
+    from ..core.geo import geometry_area_m2
+
+    return geometry_area_m2(geometry) / 1e6
+
+
+def _alpha_shape(points: list[tuple[float, float]], alpha: float) -> dict[str, Any] | None:
+    """Contour concave (alpha-shape) d'un nuage de points.
+
+    Reprend l'approche de `pratisig/sante-isochrones-app`, qui s'appuyait sur la
+    bibliothèque `alphashape`. Implémentation ici avec SciPy (triangulation de
+    Delaunay) et Shapely (union des triangles) — tous deux déjà dans le socle.
+    Si l'un manque, la fonction renvoie `None` et l'appelant retombe sur
+    l'enveloppe convexe.
+
+    Principe : on ne conserve que les triangles dont le cercle circonscrit est
+    plus petit qu'un seuil dérivé d'`alpha`, puis on fusionne ces triangles.
+    L'union gère naturellement les frontières fragmentées, contrairement à un
+    chaînage manuel d'arêtes.
+    """
+    if len(points) < 4:
+        return None
+    try:
+        from scipy.spatial import Delaunay  # type: ignore
+        from shapely.geometry import MultiPolygon, Polygon, mapping
+        from shapely.ops import unary_union
+    except ImportError:
+        return None
+
+    import math
+
+    # L'alpha-shape n'a de sens qu'en unités métriques : projection locale
+    lon0 = sum(p[0] for p in points) / len(points)
+    lat0 = sum(p[1] for p in points) / len(points)
+    cos_lat = max(math.cos(math.radians(lat0)), 1e-6)
+
+    def to_m(p: tuple[float, float]) -> tuple[float, float]:
+        return ((p[0] - lon0) * 111_320.0 * cos_lat, (p[1] - lat0) * 110_574.0)
+
+    def to_deg(x: float, y: float) -> tuple[float, float]:
+        return (lon0 + x / (111_320.0 * cos_lat), lat0 + y / 110_574.0)
+
+    projected = [to_m(p) for p in points]
+    try:
+        tri = Delaunay(projected)
+    except Exception:
+        return None
+
+    xs = [p[0] for p in projected]
+    ys = [p[1] for p in projected]
+    extent = max(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
+    max_circumradius = extent / max(alpha * 4, 1e-6)
+
+    kept: list[Any] = []
+    for simplex in tri.simplices:
+        pa, pb, pc = (projected[i] for i in simplex)
+        a = math.dist(pa, pb)
+        b = math.dist(pb, pc)
+        c = math.dist(pc, pa)
+        s = (a + b + c) / 2
+        area = max(s * (s - a) * (s - b) * (s - c), 0.0) ** 0.5
+        if area < 1e-9:
+            continue
+        if (a * b * c) / (4 * area) > max_circumradius:
+            continue
+        kept.append(Polygon([pa, pb, pc]))
+
+    if not kept:
+        return None
+
+    try:
+        merged = unary_union(kept)
+    except Exception:
+        return None
+    if merged.is_empty:
+        return None
+
+    # Si l'union se fragmente, garder la composante principale
+    if isinstance(merged, MultiPolygon):
+        merged = max(merged.geoms, key=lambda g: g.area)
+    if merged.area <= 0:
+        return None
+
+    # Garde-fou : une alpha-shape dégénérée ne doit pas remplacer un contour
+    # plausible. On la compare à l'enveloppe convexe du même nuage.
+    try:
+        hull_area = Polygon(projected).convex_hull.area
+        if hull_area > 0 and merged.area / hull_area < 0.15:
+            return None
+    except Exception:
+        pass
+
+    geom = mapping(merged)
+    if geom.get("type") != "Polygon":
+        return None
+    rings = [[list(to_deg(x, y)) for x, y in ring] for ring in geom["coordinates"]]
+    for ring in rings:
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+    return {"type": "Polygon", "coordinates": rings}
+
 
 
 def _hull_polygon(lon: float, lat: float, points: list[tuple[float, float]]) -> dict[str, Any]:

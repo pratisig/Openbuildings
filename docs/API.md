@@ -279,6 +279,79 @@ Pour les précipitations, le résumé inclut `total_mm`, `rainy_days` (≥ 1 mm)
 
 ---
 
+## Agriculture
+
+| Méthode | Endpoint |
+|---|---|
+| `GET` | `/api/agriculture/crops` |
+| `GET` | `/api/agriculture/crops/{crop_id}` |
+| `GET` | `/api/agriculture/zones` |
+| `POST` | `/api/agriculture/season` |
+| `POST` | `/api/agriculture/suitability` |
+
+Dix cultures : `mil`, `sorgho`, `mais`, `riz`, `arachide`, `niebe`, `manioc`,
+`tomate`, `oignon`, `coton`.
+
+```jsonc
+// Bilan d'une campagne
+{
+  "crop": "mil",
+  "latitude": 14.69, "longitude": -17.44,
+  "sowing_date": "2024-07-01",
+  "end_date": null,           // défaut : semis + durée du cycle
+  "soil": "sableux"           // optionnel
+}
+```
+
+Réponse : degrés-jours cumulés, stade phénologique, bilan hydrique FAO-56
+(ETc, déficit, besoin d'irrigation), indices de stress thermique/hydrique/froid,
+rendement potentiel et alertes.
+
+```jsonc
+// Aptitude culturale
+{ "latitude": 14.69, "longitude": -17.44, "year": 2024, "soil": "sableux" }
+```
+
+Réponse : zone agro-écologique et classement des cultures par score
+(pluviométrie 50 %, température 30 %, sol 20 % — redistribué si le sol
+n'est pas précisé).
+
+> Les indices de végétation ne sont **pas** fournis par ce module : ils
+> viennent de `/api/raster/timeseries` (Sentinel-2 réel). `POST
+> /api/agriculture/vegetation` renvoie un `400` qui le rappelle.
+
+---
+
+## Analyse foncière
+
+| Méthode | Endpoint |
+|---|---|
+| `GET` | `/api/land/criteria` |
+| `GET` | `/api/land/references` |
+| `POST` | `/api/land/analyze` |
+| `POST` | `/api/land/compare` |
+
+```jsonc
+{
+  "latitude": 14.75, "longitude": -17.30,
+  "reference_city": "dakar",   // voir /api/land/references
+  "include_services": true,
+  "years": 1                   // historique pluviométrique
+}
+```
+
+Six critères pondérés : inondation (30 %), topographie (15 %), occupation du
+sol (15 %), accessibilité routière (15 %), services de proximité (15 %),
+distance à la ville (10 %).
+
+**Redistribution des poids** : une composante indisponible est `null` et son
+poids est réparti sur les autres. `coverage_pct` indique la part de données
+réellement obtenue, `missing` liste les composantes absentes.
+
+`/compare` accepte 2 à 8 parcelles et les classe.
+
+---
+
 ## Exports
 
 | Méthode | Endpoint |

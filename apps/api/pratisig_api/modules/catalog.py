@@ -104,8 +104,8 @@ MODULES: list[dict[str, Any]] = [
         "icon": "route",
         "group": "Analyse",
         "summary": (
-            "Calcul d'itinéraires plus courts, matrices de distances et zones "
-            "d'accessibilité (isochrones) — socle des cas d'usage santé/accessibilité."
+            "Itinéraires, isochrones par interpolation radiale (alpha-shape) et "
+            "accessibilité aux équipements — socle des cas d'usage santé."
         ),
         "origin": ["pratisig/GeoRouteX", "pratisig/openmapagents", "pratisig/sante-isochrones-app"],
         "endpoints": [
@@ -139,7 +139,7 @@ MODULES: list[dict[str, Any]] = [
             "Catalogue Sentinel-1/2, Landsat, MODIS, WorldCover, SRTM, ERA5 avec calcul "
             "d'indices (NDVI, NDWI, NDBI, EVI, LST) et génération de tuiles."
         ),
-        "origin": ["pratisig/openmapagents", "pratisig/AgriSight_v2"],
+        "origin": ["pratisig/openmapagents", "pratisig/AGRISIGHT"],
         "endpoints": [
             "GET /api/raster/datasets",
             "POST /api/raster/tiles",
@@ -168,8 +168,44 @@ MODULES: list[dict[str, Any]] = [
         "icon": "cloud",
         "group": "Thématiques",
         "summary": "Séries climatiques journalières NASA POWER (pluie, température) par point.",
-        "origin": ["pratisig/floodingsn"],
+        "origin": ["pratisig/floodingsn", "pratisig/AGRISIGHT"],
         "endpoints": ["POST /api/climate/timeseries"],
+        "requires": ["réseau"],
+        "status": "actif",
+    },
+    {
+        "id": "agriculture",
+        "label": "Agriculture",
+        "icon": "sprout",
+        "group": "Thématiques",
+        "summary": (
+            "Suivi agronomique : degrés-jours, stades phénologiques, bilan hydrique FAO-56, "
+            "indices de stress, rendement potentiel et aptitude culturale sur 10 cultures."
+        ),
+        "origin": ["pratisig/AGRISIGHT", "pratisig/AgriSight_v2"],
+        "endpoints": [
+            "GET /api/agriculture/crops",
+            "POST /api/agriculture/season",
+            "POST /api/agriculture/suitability",
+        ],
+        "requires": ["réseau"],
+        "status": "actif",
+    },
+    {
+        "id": "land",
+        "label": "Analyse foncière",
+        "icon": "landmark",
+        "group": "Thématiques",
+        "summary": (
+            "Évaluation d'une parcelle avant acquisition : risque d'inondation, topographie, "
+            "occupation du sol, accessibilité et services, avec score pondéré et comparaison."
+        ),
+        "origin": ["pratisig/terracheck-senegal"],
+        "endpoints": [
+            "GET /api/land/criteria",
+            "POST /api/land/analyze",
+            "POST /api/land/compare",
+        ],
         "requires": ["réseau"],
         "status": "actif",
     },
@@ -276,39 +312,66 @@ MIGRATION_MAP: list[dict[str, Any]] = [
         "note": "Pas de code intégré : sert de catalogue de patrons cartographiques.",
     },
     {
-        "repo": "pratisig/Zone",
-        "type": "inaccessible",
-        "role_origine": "Inconnu — dépôt privé ou supprimé au moment de la migration.",
-        "destination": "—",
-        "note": "À rattacher au module `admin` (sélection de zone) une fois accessible.",
-    },
-    {
         "repo": "pratisig/AGRISIGHT",
-        "type": "inaccessible",
-        "role_origine": "Inconnu — supposé suivi agricole par télédétection.",
-        "destination": "—",
-        "note": "Emplacement réservé dans le module `raster` (indices de végétation).",
+        "type": "personnel",
+        "role_origine": (
+            "AgriSight Pro v6.5 : app Streamlit monolithique (1496 lignes) de suivi "
+            "agronomique — GDD, FAO-56, indices de stress, rapports PDF, IA Gemini."
+        ),
+        "destination": "modules/agriculture.py + modules/climate.py",
+        "note": (
+            "Les calculs agronomiques sont conservés. En revanche `calculate_vegetation_indices()` "
+            "SIMULAIT le NDVI (sinusoïde + bruit gaussien) : remplacé par le Sentinel-2 réel du module raster."
+        ),
     },
     {
         "repo": "pratisig/AgriSight_v2",
-        "type": "inaccessible",
-        "role_origine": "Inconnu — v2 du précédent.",
-        "destination": "—",
-        "note": "Emplacement réservé dans le module `raster`.",
+        "type": "personnel",
+        "role_origine": (
+            "Refonte modulaire d'AgriSight (config/api/database/analytics/ui) avec base "
+            "de cultures typée, zones agro-écologiques et préférences pédologiques."
+        ),
+        "destination": "modules/agriculture.py",
+        "note": (
+            "Doublon fonctionnel d'AGRISIGHT — les deux bases de cultures sont fusionnées : "
+            "paramètres thermiques d'AGRISIGHT + seuils pluviométriques et sols de la v2."
+        ),
     },
     {
         "repo": "pratisig/terracheck-senegal",
-        "type": "inaccessible",
-        "role_origine": "Inconnu — supposé vérification foncière au Sénégal.",
-        "destination": "—",
-        "note": "À rattacher aux modules `admin` + `buildings`.",
+        "type": "personnel",
+        "role_origine": (
+            "Application Next.js 14 d'analyse foncière avant achat au Sénégal : score "
+            "multicritère (inondation, topographie, occupation du sol, accessibilité, marché)."
+        ),
+        "destination": "modules/land.py",
+        "note": (
+            "Deux idées reprises telles quelles : la redistribution des poids quand une source "
+            "manque, et le refus des données simulées (son mockGee.ts avait été vidé). "
+            "Les analyses passent côté serveur, où le blocage d'IP qui l'obligeait à appeler "
+            "Overpass depuis le navigateur n'existe pas."
+        ),
     },
     {
         "repo": "pratisig/sante-isochrones-app",
+        "type": "personnel",
+        "role_origine": (
+            "Générateur d'isochrones de desserte sanitaire : 6 moteurs de routage "
+            "(OSM Pur/Tps_min, OSMnx, ORS, OSRM, Valhalla, GraphHopper), alpha-shapes, UTM auto."
+        ),
+        "destination": "modules/routing.py + core/projection.py",
+        "note": (
+            "Apport majeur : l'interpolation radiale du front d'isochrone et l'alpha-shape, "
+            "bien plus fidèles que le seuillage précédent. La projection UTM automatique "
+            "devient un utilitaire commun (mesurer une aire en degrés est faux)."
+        ),
+    },
+    {
+        "repo": "pratisig/Zone",
         "type": "inaccessible",
-        "role_origine": "Inconnu — supposé accessibilité aux structures de santé.",
+        "role_origine": "Inconnu — dépôt toujours privé ou supprimé.",
         "destination": "—",
-        "note": "Le cas d'usage est déjà couvert par /api/routing/accessibility.",
+        "note": "Seul dépôt encore inaccessible. Le schéma `AreaOfInterest` couvre probablement le besoin.",
     },
 ]
 

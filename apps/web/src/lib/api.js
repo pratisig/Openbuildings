@@ -140,6 +140,18 @@ export const api = {
   climateParameters: () => request('/api/climate/parameters'),
   climate: (body) => request('/api/climate/timeseries', { method: 'POST', body }),
 
+  // Agriculture
+  agricultureCrops: () => request('/api/agriculture/crops'),
+  agricultureZones: () => request('/api/agriculture/zones'),
+  agricultureSeason: (body) => request('/api/agriculture/season', { method: 'POST', body }),
+  agricultureSuitability: (body) => request('/api/agriculture/suitability', { method: 'POST', body }),
+
+  // Foncier
+  landCriteria: () => request('/api/land/criteria'),
+  landReferences: () => request('/api/land/references'),
+  landAnalyze: (body) => request('/api/land/analyze', { method: 'POST', body }),
+  landCompare: (body) => request('/api/land/compare', { method: 'POST', body }),
+
   // Exports
   exportFormats: () => request('/api/exports/formats'),
   exportLayer: (format, data, filename) =>

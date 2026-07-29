@@ -21,12 +21,14 @@ from .core.http import UpstreamError, close_client
 from .modules import (
     admin,
     agent,
+    agriculture,
     buildings,
     catalog,
     climate,
     exports,
     flood,
     geocoding,
+    land,
     osm,
     overture,
     raster,
@@ -109,6 +111,8 @@ for module in (
     raster,
     flood,
     climate,
+    agriculture,
+    land,
     exports,
     agent,
 ):

@@ -5,6 +5,8 @@ import AboutPanel from './components/AboutPanel';
 import DataPanel from './modules/DataPanel';
 import AnalysisPanel from './modules/AnalysisPanel';
 import ThematicPanel from './modules/ThematicPanel';
+import AgriculturePanel from './modules/AgriculturePanel';
+import LandPanel from './modules/LandPanel';
 import AgentPanel from './modules/AgentPanel';
 import { createLayer } from './lib/layers';
 import api from './lib/api';
@@ -15,6 +17,8 @@ const TABS = [
   { id: 'layers', label: 'Couches', icon: '≡' },
   { id: 'analysis', label: 'Analyse', icon: '◈' },
   { id: 'thematic', label: 'Thématiques', icon: '◐' },
+  { id: 'agriculture', label: 'Agriculture', icon: '❦' },
+  { id: 'land', label: 'Foncier', icon: '⬛' },
   { id: 'agent', label: 'Agent', icon: '✦' },
   { id: 'about', label: 'À propos', icon: '?' },
 ];
@@ -154,6 +158,8 @@ export default function App() {
             {tab === 'thematic' && (
               <ThematicPanel map={map} onRaster={addRaster} onLayer={addLayer} notify={notify} />
             )}
+            {tab === 'agriculture' && <AgriculturePanel map={map} notify={notify} />}
+            {tab === 'land' && <LandPanel map={map} onLayer={addLayer} notify={notify} />}
             {tab === 'agent' && (
               <AgentPanel map={map} layers={layers} onLayer={addLayer} notify={notify} />
             )}

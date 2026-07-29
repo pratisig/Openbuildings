@@ -286,3 +286,49 @@ hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; width: 10
   .search { max-width: none; }
   .inspector { width: calc(100% - 24px); left: 12px; right: 12px; }
 }
+
+/* ── Barres de progression (stress, classements) ─────── */
+.bars, .ranking { display: flex; flex-direction: column; gap: 6px; }
+.bar-row, .rank-row {
+  display: grid; grid-template-columns: 78px 1fr 34px; align-items: center;
+  gap: 7px; font-size: 11.5px;
+}
+.rank-row { grid-template-columns: 74px 1fr 30px 60px; }
+.rank-row small, .bar-row small { color: var(--text-dim); font-size: 10px; }
+.rank-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track {
+  height: 9px; background: var(--bg); border-radius: 5px;
+  overflow: hidden; border: 1px solid var(--border);
+}
+.bar-fill { height: 100%; border-radius: 5px; transition: width 0.25s ease; }
+.bar-row b, .rank-row b { text-align: right; color: var(--text); }
+
+/* ── Score foncier ───────────────────────────────────── */
+.score-badge {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px; border: 2px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.score-value { font-size: 2.1rem; font-weight: 700; line-height: 1; }
+.score-label { font-size: 12px; text-transform: capitalize; }
+.score-badge small { font-size: 10px; color: var(--text-dim); }
+
+/* ── Variantes de notices ────────────────────────────── */
+.notice-danger {
+  background: rgba(230, 57, 70, 0.12); border: 1px solid rgba(230, 57, 70, 0.4);
+  padding: 8px 10px; border-radius: var(--radius); font-size: 11.5px; line-height: 1.45;
+}
+.notice-warning {
+  background: rgba(233, 196, 106, 0.12); border: 1px solid rgba(233, 196, 106, 0.4);
+  padding: 8px 10px; border-radius: var(--radius); font-size: 11.5px; line-height: 1.45;
+}
+.notice-info {
+  background: rgba(69, 123, 157, 0.12); border: 1px solid rgba(69, 123, 157, 0.4);
+  padding: 8px 10px; border-radius: var(--radius); font-size: 11.5px; line-height: 1.45;
+}
+.notice-ok {
+  background: rgba(42, 157, 143, 0.12); border: 1px solid rgba(42, 157, 143, 0.4);
+  padding: 8px 10px; border-radius: var(--radius); font-size: 11.5px; line-height: 1.45;
+}
+.warn-text { color: var(--warn); }
+.disclaimer { font-style: italic; opacity: 0.8; border-top: 1px solid var(--border); padding-top: 8px; }

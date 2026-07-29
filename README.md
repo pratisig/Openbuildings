@@ -5,7 +5,7 @@
 
 [![API](https://img.shields.io/badge/API-FastAPI-009688)](apps/api)
 [![Front](https://img.shields.io/badge/Front-React%20%2B%20MapLibre-61dafb)](apps/web)
-[![Tests](https://img.shields.io/badge/tests-84%20passants-2a9d8f)](apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passants-2a9d8f)](apps/api/tests)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 ---
@@ -16,7 +16,7 @@ Quinze dépôts coexistaient, avec les problèmes classiques de l'éparpillement
 
 | Problème constaté | Exemple concret | Réponse apportée |
 |---|---|---|
-| **Projets dupliqués** | `Openbuildings` et `openbuildings_app` téléchargent les mêmes données ; `floodingsn` et `innondationSN` sont deux versions de « FloodWatch WA » | Fusionnés en un module unique par domaine |
+| **Projets dupliqués** | 3 paires font la même chose : `Openbuildings`/`openbuildings_app`, `floodingsn`/`innondationSN`, `AGRISIGHT`/`AgriSight_v2` | Fusionnés en un module unique par domaine |
 | **Appels API épars** | Nominatim appelé depuis 3 projets, chacun avec son timeout et sans User-Agent conforme | Un client HTTP partagé, avec cache |
 | **Code recopié** | DuckDB initialisé à l'identique dans `backend.py` et `agent.py` ; 3 initialisations GEE différentes | Un moteur DuckDB, un service GEE |
 | **Sites éparpillés** | Streamlit Cloud ×4, Render, Vercel, PythonAnywhere | Un `docker compose up` |
@@ -91,11 +91,13 @@ C'est l'inverse du comportement d'origine : `floodingsn` affichait des chiffres
 | **osm** | Réseaux routiers, équipements, hydrographie via Overpass | `city-roads`, `innondationSN` |
 | **admin** | Limites administratives GADM + 4 niveaux du Sénégal | `Carto-facileSN`, `floodingsn` |
 | **geocoding** | Recherche de lieux et géocodage inverse | `openmapagents`, `city-roads` |
-| **routing** | Itinéraires, isochrones, accessibilité aux équipements | `GeoRouteX`, `sante-isochrones-app` |
+| **routing** | Itinéraires, isochrones (alpha-shape), accessibilité | `GeoRouteX`, `sante-isochrones-app` |
 | **spatial** | Buffer, clip, dissolve, points-dans-polygone, statistiques | `openmapagents` |
-| **raster** | Sentinel, Landsat, MODIS, indices NDVI/NDWI/LST | `openmapagents`, `AgriSight` |
+| **raster** | Sentinel, Landsat, MODIS, indices NDVI/NDWI/LST | `openmapagents`, `AGRISIGHT` |
 | **flood** | Détection SAR d'inondations, population exposée | `floodingsn`, `innondationSN` |
-| **climate** | Séries pluie/température NASA POWER | `floodingsn` |
+| **climate** | Séries pluie/température NASA POWER | `floodingsn`, `AGRISIGHT` |
+| **agriculture** | Degrés-jours, bilan hydrique FAO-56, stress, aptitude culturale | `AGRISIGHT`, `AgriSight_v2` |
+| **land** | Score foncier multicritère avant acquisition | `terracheck-senegal` |
 | **exports** | GeoJSON, CSV, GeoPackage, Shapefile, GeoParquet | `Openbuildings`, `Carto-facileSN` |
 | **agent** | Pilotage en langage naturel de tous les modules | `openmapagents` |
 
@@ -206,15 +208,17 @@ curl -X POST localhost:8000/api/flood/analyze -H 'Content-Type: application/json
 cd apps/api && python -m pytest tests/ -v
 ```
 
-84 tests couvrent le socle géométrique, la validation des entrées, les
-opérations spatiales, les exports et la dégradation des services.
+137 tests couvrent le socle géométrique, la validation des entrées, les
+opérations spatiales, les exports, la dégradation des services, les calculs
+agronomiques, le scoring foncier et la géométrie des isochrones.
 
 ---
 
 ## État des dépôts d'origine
 
 **Fusionnés** : `Openbuildings`, `openbuildings_app`, `floodingsn`,
-`innondationSN`, `Carto-facileSN`
+`innondationSN`, `Carto-facileSN`, `AGRISIGHT`, `AgriSight_v2`,
+`terracheck-senegal`, `sante-isochrones-app`
 
 **Références intégrées** (forks) : `openmapagents` (modèle d'architecture),
 `city-roads` (requêtes Overpass), `GeoRouteX` (routage),
@@ -222,9 +226,8 @@ opérations spatiales, les exports et la dégradation des services.
 
 **Sans code** : `routine` (dépôt vide)
 
-**Inaccessibles au moment de la migration** (privés ou supprimés) :
-`Zone`, `AGRISIGHT`, `AgriSight_v2`, `terracheck-senegal`, `sante-isochrones-app`.
-Des emplacements leur sont réservés — voir [`docs/MIGRATION.md`](docs/MIGRATION.md).
+**Inaccessible** : `Zone` (toujours privé ou supprimé). Le schéma
+`AreaOfInterest` couvre probablement son besoin — voir [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
 ---
 
