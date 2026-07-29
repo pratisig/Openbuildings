@@ -1,0 +1,13 @@
+-r requirements.txt
+
+# Exports SIG (GeoPackage, Shapefile, GeoParquet)
+geopandas>=0.14
+pyogrio>=0.7
+pyarrow>=15.0
+
+# Imagerie satellite et inondations
+earthengine-api>=0.1.390
+google-auth>=2.28
+
+# Agent cartographique
+litellm>=1.35

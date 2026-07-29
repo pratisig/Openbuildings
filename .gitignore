@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Données et cache générés
+data/cache/
+data/exports/
+*.parquet
+*.gpkg
+
+# Environnement et secrets
+.env
+.env.local
+*-service-account*.json
+credentials.json
+
+# Système
+.DS_Store
+Thumbs.db

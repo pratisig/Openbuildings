@@ -1,0 +1,10 @@
+# Socle minimal — l'API démarre et sert tous les modules sans dépendance lourde.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2
+httpx>=0.27
+duckdb>=0.10
+shapely>=2.0
+
+# Optionnels — voir requirements-full.txt pour tout activer
