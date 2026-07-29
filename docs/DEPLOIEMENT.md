@@ -128,16 +128,51 @@ npm run dev
 
 ### Si ça ne marche pas
 
+**Commencez par le diagnostic** — il vérifie Python, Node et les variables
+d'environnement problématiques :
+
+```powershell
+.\scripts\dev.ps1 doctor
+```
+
 | Symptôme | Cause | Solution |
 |---|---|---|
 | Le script rend la main sans rien afficher | `dev.sh` lancé sous PowerShell | Utilisez `.\scripts\dev.ps1` |
 | « Le bloc Catch ou Finally manque » ou « Accolade fermante manquante » | Fichier `.ps1` lu en CP1252 au lieu d'UTF-8 | `git pull` — corrigé depuis. Si l'erreur persiste, votre éditeur a réenregistré le fichier sans BOM : voir la note ci-dessous |
+| « Could not find platform independent libraries `<prefix>` » | Variable `PYTHONHOME` héritée d'une autre installation Python | Voir ci-dessous |
+| « NativeCommandError » alors que la commande semble réussir | PowerShell traite la sortie stderr comme une erreur | `git pull` — corrigé depuis |
 | « l'exécution de scripts est désactivée » | Politique PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
 | `localhost:5173` refuse la connexion | L'interface n'a pas démarré | Vérifiez que Node est installé : `node --version` |
 | La boutique Microsoft s'ouvre | Alias Python du Store | Installez Python depuis [python.org](https://www.python.org/downloads/) en cochant « Add python.exe to PATH » |
 | `ModuleNotFoundError: pratisig_api` | uvicorn lancé du mauvais dossier | Lancez-le depuis `apps/api` |
 | Erreur d'extension DuckDB au démarrage | Extensions `spatial`/`httpfs` non téléchargées | Vérifiez la connexion ; sans elles, Overture et Open Buildings sont indisponibles, le reste fonctionne |
 
+
+> **« Could not find platform independent libraries »**
+>
+> Cette erreur vient de votre installation Python, pas de la plateforme. Elle
+> survient quand la variable `PYTHONHOME` pointe vers une installation Python
+> absente ou différente — souvent le reste d'une désinstallation, d'Anaconda
+> ou d'un outil tiers.
+>
+> Le script neutralise désormais `PYTHONHOME` et `PYTHONPATH` pour sa propre
+> exécution. Si le problème persiste ailleurs, supprimez la variable
+> définitivement :
+>
+> ```powershell
+> # Vérifier
+> $env:PYTHONHOME
+>
+> # Supprimer pour la session courante
+> Remove-Item Env:PYTHONHOME
+>
+> # Supprimer définitivement (rouvrir le terminal ensuite)
+> [Environment]::SetEnvironmentVariable('PYTHONHOME', $null, 'User')
+> ```
+>
+> Si Python reste inutilisable, réinstallez-le depuis
+> [python.org](https://www.python.org/downloads/) en cochant
+> **« Add python.exe to PATH »**.
 
 > **Note sur l'encodage des scripts `.ps1`**
 >

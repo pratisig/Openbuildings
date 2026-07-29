@@ -549,3 +549,36 @@ class TestWindowsScript:
             suite = code[i + 1 : i + 40].strip().lower()
             line = code[: match.start()].count("\n") + 1
             assert suite.startswith(("catch", "finally")), f"try sans catch/finally ligne {line}"
+
+    def test_no_stop_error_action(self):
+        """ErrorActionPreference='Stop' casse les commandes natives.
+
+        Régression : en PowerShell 5.1, avec 'Stop', tout ce qu'une commande
+        native écrit sur stderr devient une erreur terminante — même quand la
+        commande réussit. python.exe émettant des avertissements sur stderr,
+        le script s'interrompait sans raison valable.
+        """
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        code = re.sub(r"^\s*#.*$", "", src, flags=re.M)
+        assert not re.search(
+            r"\$ErrorActionPreference\s*=\s*'Stop'", code
+        ), "dev.ps1 ne doit pas utiliser ErrorActionPreference='Stop'"
+
+    def test_switch_branches_match_validateset(self):
+        """Chaque valeur acceptée en paramètre doit avoir une branche."""
+        import re
+
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        declared = set(re.findall(r"'(\w+)'", re.search(r"ValidateSet\(([^)]*)\)", src).group(1)))
+        implemented = set(re.findall(r"^\s*'(\w+)'\s*\{", src, re.M))
+        assert declared == implemented, (
+            f"déclaré={sorted(declared)} implémenté={sorted(implemented)}"
+        )
+
+    def test_has_doctor_mode(self):
+        """Le mode doctor aide à diagnostiquer les environnements cassés."""
+        src = self.SCRIPT.read_text(encoding="utf-8-sig")
+        assert "'doctor'" in src
+        assert "PYTHONHOME" in src, "le diagnostic doit signaler PYTHONHOME"
