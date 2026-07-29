@@ -5,7 +5,7 @@
 
 [![API](https://img.shields.io/badge/API-FastAPI-009688)](apps/api)
 [![Front](https://img.shields.io/badge/Front-React%20%2B%20MapLibre-61dafb)](apps/web)
-[![Tests](https://img.shields.io/badge/tests-137%20passants-2a9d8f)](apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-140%20passants-2a9d8f)](apps/api/tests)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 ---
@@ -27,31 +27,40 @@ Quinze dépôts coexistaient, avec les problèmes classiques de l'éparpillement
 
 ## Démarrage
 
-### Avec Docker (recommandé)
+### En une commande
 
 ```bash
 git clone https://github.com/pratisig/Openbuildings.git pratisig-platform
 cd pratisig-platform
-cp .env.example .env          # optionnel : tout fonctionne sans
+./scripts/dev.sh
+```
+
+Le script installe tout au premier lancement, puis démarre l'API et
+l'interface.
+
+- Interface : <http://localhost:5173>
+- API et documentation : <http://localhost:8000/docs>
+
+```bash
+./scripts/dev.sh api      # API seule
+./scripts/dev.sh check    # tests + lint + build
+```
+
+### Avec Docker
+
+```bash
+cp .env.example .env      # optionnel : tout fonctionne sans
 docker compose up -d
 ```
 
-Interface : <http://localhost:8080> · API : <http://localhost:8000/docs>
+Tout est servi sur <http://localhost:8080>, API comprise.
 
-### En développement
+### Déploiement
 
-```bash
-# API
-cd apps/api
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # socle léger
-# pip install -r requirements-full.txt   # + exports SIG, GEE, agent
-uvicorn pratisig_api.main:app --reload
-
-# Interface (autre terminal)
-cd apps/web
-npm install && npm run dev
-```
+**API sur Render, interface sur Vercel** — les deux en plan gratuit.
+Voir [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md), qui explique aussi
+pourquoi Streamlit ne convient plus et pourquoi l'API ne peut pas tourner
+sur Vercel.
 
 ---
 
@@ -195,6 +204,7 @@ curl -X POST localhost:8000/api/flood/analyze -H 'Content-Type: application/json
 
 ## Documentation
 
+- [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md) — tester en local, déployer sur Render et Vercel
 - [`docs/MIGRATION.md`](docs/MIGRATION.md) — ce qu'est devenu chaque dépôt, dépôt par dépôt
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — décisions techniques et leurs raisons
 - [`docs/API.md`](docs/API.md) — référence des endpoints

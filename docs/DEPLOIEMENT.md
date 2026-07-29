@@ -1,0 +1,212 @@
+# Tester et déployer
+
+## Réponse courte
+
+| Plateforme | Verdict |
+|---|---|
+| **Streamlit Cloud** | ❌ Impossible — la plateforme n'est plus une app Streamlit |
+| **Vercel** | ✅ Pour l'**interface** uniquement — ❌ pour l'API |
+| **Render** | ✅ Pour l'**API** — c'est le bon choix |
+
+**Recommandation : API sur Render + interface sur Vercel.** Les deux ont un
+plan gratuit suffisant pour tester. Le tout reste une seule plateforme pour
+l'utilisateur : le front appelle l'API, qui reste invisible.
+
+Pour un simple essai avant tout déploiement, `./scripts/dev.sh` suffit.
+
+---
+
+## Pourquoi pas Streamlit
+
+C'est la question la plus légitime, puisque quatre de vos dépôts en étaient
+(`Openbuildings`, `openbuildings_app`, `floodingsn`, `AGRISIGHT`). Mais
+Streamlit ne peut plus héberger cette plateforme :
+
+- **Streamlit n'expose pas d'API.** C'est justement ce qui bloquait avant :
+  impossible d'appeler `floodingsn` depuis un script, QGIS ou une autre app.
+  La plateforme a été construite autour d'une API — Streamlit ne sait pas la servir.
+- **Streamlit réexécute tout le script à chaque clic.** Avec des requêtes
+  DuckDB sur S3, c'est intenable.
+- **Une seule app par dépôt** sur Streamlit Cloud. Vous retomberiez dans
+  l'éparpillement de départ.
+
+L'interface React remplace les quatre apps Streamlit d'un coup.
+
+## Pourquoi pas Vercel pour l'API
+
+Vercel est excellent pour du statique et des fonctions courtes. Il ne convient
+pas à cette API :
+
+- **Fonctions éphémères** — pas de processus persistant, donc la connexion
+  DuckDB et son cache sont rebâtis à chaque appel.
+- **Limite de durée** (10 s en gratuit) — une requête Overture ou une analyse
+  Sentinel-1 la dépasse largement.
+- **Pas de système de fichiers persistant** — le cache disque est perdu, or il
+  est nécessaire pour respecter les quotas de Nominatim et d'Overpass.
+- **Blocage d'IP** — c'est exactement ce qui obligeait `terracheck-senegal` à
+  faire ses appels Overpass *depuis le navigateur*.
+
+Render fait tourner un vrai conteneur : rien de tout cela ne se pose.
+
+---
+
+## 1. En local (le plus simple)
+
+```bash
+git clone https://github.com/pratisig/Openbuildings.git pratisig-platform
+cd pratisig-platform
+./scripts/dev.sh
+```
+
+Le script crée l'environnement Python, installe les dépendances, lance l'API et
+l'interface. Comptez deux à trois minutes au premier lancement.
+
+- Interface : <http://localhost:5173>
+- API et documentation : <http://localhost:8000/docs>
+
+Autres commandes :
+
+```bash
+./scripts/dev.sh api      # API seule
+./scripts/dev.sh check    # tests + lint + build
+```
+
+### Avec Docker
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+Tout est servi sur <http://localhost:8080>, API comprise (proxy nginx).
+C'est la configuration la plus proche de la production.
+
+---
+
+## 2. Premier test — que regarder
+
+Une fois lancé, ces cinq points valident l'essentiel :
+
+1. **`/health`** — indique quels services sont actifs. En socle léger,
+   `earthengine`, `geopandas` et `llm` sont `unavailable` : c'est normal.
+2. **Onglet « À propos »** — le catalogue des modules et la traçabilité de vos
+   15 dépôts. C'est la réponse à « j'ai oublié l'objectif de certains ».
+3. **Onglet « Données » → Admin → Sénégal / régions** — charge les 14 régions.
+   Valide la chaîne API → carte.
+4. **Onglet « Données » → OSM → Structures de santé** — zoomez d'abord sur une
+   ville, puis chargez.
+5. **Onglet « Couches » → déplier une couche → exporter** — GeoJSON et CSV sont
+   toujours disponibles ; GeoPackage et Shapefile exigent GeoPandas.
+
+Pour tester l'analyse foncière (onglet « Foncier ») et l'agriculture, centrez
+la carte sur un point du Sénégal — ces modules travaillent sur le centre de la
+vue.
+
+---
+
+## 3. Déploiement — API sur Render
+
+1. Sur [render.com](https://render.com) : **New → Blueprint**
+2. Sélectionnez ce dépôt — `render.yaml` est détecté automatiquement
+3. Validez : Render construit l'image Docker (5 à 10 minutes la première fois)
+
+L'API est publiée sur `https://pratisig-api.onrender.com` (nom variable).
+Vérifiez `https://<votre-api>/health`.
+
+### Limites du plan gratuit à connaître
+
+| Limite | Conséquence | Contournement |
+|---|---|---|
+| **512 Mo de RAM** | DuckDB tué sur les grosses requêtes | `PRATISIG_DUCKDB_MEMORY_LIMIT=300MB` (déjà dans `render.yaml`) ; limitez les emprises |
+| **Veille après 15 min** | Première requête très lente (~50 s) | Normal ; passer au plan payant pour l'éviter |
+| **Pas de disque persistant** | Cache perdu au redémarrage | Il se reconstruit ; sans gravité |
+
+Sur plan gratuit, préférez des zones réduites : un quartier plutôt qu'une
+région entière.
+
+### Activer les modules optionnels
+
+Dans **Environment** sur Render :
+
+| Variable | Active |
+|---|---|
+| `PRATISIG_GEE_SERVICE_ACCOUNT_EMAIL` + `PRATISIG_GEE_SERVICE_ACCOUNT_KEY_JSON` | Imagerie satellite et détection d'inondations |
+| `PRATISIG_LLM_ENABLED=true` + `PRATISIG_LLM_API_KEY` | Agent cartographique |
+
+Pour Earth Engine, collez le **contenu JSON** de la clé dans
+`..._KEY_JSON` (pas un chemin de fichier).
+
+---
+
+## 4. Déploiement — interface sur Vercel
+
+1. Sur [vercel.com](https://vercel.com) : **Add New → Project**, importez le dépôt
+2. **Root Directory** : `apps/web` ← indispensable, c'est un monorepo
+3. **Environment Variables** : ajoutez
+
+   ```
+   VITE_API_URL = https://<votre-api>.onrender.com
+   ```
+
+4. Déployez
+
+> `VITE_API_URL` est lue **au moment du build**. Si vous la modifiez ensuite,
+> il faut relancer un déploiement (*Redeploy*).
+
+### Puis autoriser le front côté API
+
+Sur Render, mettez à jour :
+
+```
+PRATISIG_CORS_ORIGINS = ["https://votre-front.vercel.app"]
+```
+
+Le `render.yaml` autorise déjà toutes les URL d'aperçu Vercel via
+`PRATISIG_CORS_ORIGIN_REGEX` — utile car chaque déploiement a une URL
+différente.
+
+### Alternative : tout sur Render
+
+Si vous préférez un seul fournisseur, ajoutez un second service statique dans
+`render.yaml`. C'est un peu plus lent pour le front (pas de CDN mondial), mais
+la gestion est simplifiée et l'URL est unique.
+
+---
+
+## 5. Ce qui est vérifié, ce qui ne l'est pas
+
+**Vérifié** : 140 tests passants, lint propre, build de l'interface, API
+démarrée avec toutes ses routes fonctionnelles, calculs (scoring foncier,
+agronomie, géométrie) testés unitairement.
+
+**Non vérifié** : les appels réseau réels. L'environnement de développement
+utilisé bloquait Nominatim, Overpass, OSRM, NASA POWER, Open-Meteo et
+source.coop. Leur **gestion d'erreur** est testée — un service injoignable
+renvoie un `502` explicite, jamais une donnée inventée — mais les réponses
+réelles restent à valider chez vous.
+
+Concrètement, au premier lancement, surveillez ces quatre modules :
+
+| Module | Service | Test rapide |
+|---|---|---|
+| `geocoding` | Nominatim | Barre de recherche en haut |
+| `osm` | Overpass | Données → OSM → Santé |
+| `buildings` | source.coop | Données → Bâtiments |
+| `climate` | NASA POWER | Thématiques → Climat |
+
+Si l'un échoue, `/health` et le message d'erreur indiquent la cause.
+
+---
+
+## Récapitulatif
+
+```
+┌────────────────────────┐        ┌─────────────────────────┐
+│  Vercel (gratuit)      │  HTTPS │  Render (gratuit)       │
+│  Interface React       │───────▶│  API FastAPI (Docker)   │
+│  CDN mondial           │        │  DuckDB · cache · GEE   │
+└────────────────────────┘        └─────────────────────────┘
+     VITE_API_URL                     PRATISIG_CORS_ORIGINS
+```
+
+Pour un simple essai : `./scripts/dev.sh`, rien à déployer.

@@ -448,3 +448,32 @@ class TestCatalogUpdated:
             if module["id"] == "geocoding":
                 prefix = "/api/geocoding"
             assert any(p.startswith(prefix) for p in paths), f"{module['id']} sans route"
+
+
+class TestOptionalDependencies:
+    """Vérifie que /health dit la vérité sur les capacités réellement installées.
+
+    Régression : scipy manquait du socle, donc l'alpha-shape était silencieusement
+    désactivée sur tout déploiement — l'isochrone retombait sur l'enveloppe convexe
+    sans que rien ne le signale.
+    """
+
+    def test_scipy_available_for_alpha_shape(self):
+        import importlib.util
+
+        assert importlib.util.find_spec("scipy") is not None, (
+            "scipy fait partie du socle (apps/api/requirements.txt) : "
+            "sans lui les isochrones perdent l'alpha-shape."
+        )
+
+    def test_health_reports_isochrone_capability(self, client):
+        data = client.get("/health").json()
+        assert "isochrone_shapes" in data["services"]
+        detail = data["services"]["isochrone_shapes"]
+        assert detail["status"] in ("ok", "degraded")
+
+    def test_health_lists_every_capability(self, client):
+        data = client.get("/health").json()
+        for name, svc in data["services"].items():
+            assert "status" in svc, f"{name} sans statut"
+            assert "powers" in svc, f"{name} sans liste de modules alimentés"

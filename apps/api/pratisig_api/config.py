@@ -29,12 +29,21 @@ class Settings(BaseSettings):
     version: str = "1.0.0"
     environment: str = "development"
     debug: bool = True
+    # Origines autorisées. En production, ajouter le domaine du front via
+    # PRATISIG_CORS_ORIGINS='["https://mon-front.vercel.app"]'.
+    # La valeur "*" est acceptée pour un déploiement de test.
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
             "http://localhost:3000",
             "http://127.0.0.1:5173",
         ]
+    )
+    # Autorise tous les sous-domaines d'aperçu (Vercel, Netlify) par expression
+    # régulière — indispensable car chaque déploiement a une URL différente.
+    cors_origin_regex: str | None = Field(
+        None,
+        description=r"Ex: https://.*\.vercel\.app",
     )
 
     # ── Stockage / cache ───────────────────────────────────────────
@@ -44,6 +53,8 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
 
     # ── DuckDB (moteur commun Overture + Open Buildings) ───────────
+    # Sur un plan gratuit (512 Mo), descendre à "300MB" et 2 threads,
+    # sinon DuckDB se fait tuer par l'OOM killer.
     duckdb_memory_limit: str = "4GB"
     duckdb_threads: int = 4
     duckdb_extensions: list[str] = Field(default_factory=lambda: ["spatial", "httpfs"])

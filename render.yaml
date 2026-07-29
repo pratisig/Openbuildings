@@ -1,0 +1,54 @@
+# Déploiement Render — API PratiSIG.
+#
+# Render → New → Blueprint → pointer sur ce dépôt.
+# Le plan gratuit suffit pour tester ; voir docs/DEPLOIEMENT.md pour les limites.
+
+services:
+  - type: web
+    name: pratisig-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    plan: free
+    region: frankfurt          # le plus proche de Dakar
+    healthCheckPath: /health
+    autoDeploy: true
+
+    envVars:
+      - key: PRATISIG_ENVIRONMENT
+        value: production
+      - key: PRATISIG_DEBUG
+        value: "false"
+
+      # ── Adapté au plan gratuit (512 Mo de RAM) ──────────────────
+      # Au-delà, DuckDB se fait tuer par l'OOM killer dès la première
+      # requête Overture un peu large.
+      - key: PRATISIG_DUCKDB_MEMORY_LIMIT
+        value: 300MB
+      - key: PRATISIG_DUCKDB_THREADS
+        value: "2"
+
+      # ── CORS : autoriser le front ───────────────────────────────
+      # Remplacer par l'URL de production une fois le front déployé.
+      - key: PRATISIG_CORS_ORIGINS
+        value: '["http://localhost:5173"]'
+      # Autorise toutes les URL d'aperçu Vercel (elles changent à chaque déploiement)
+      - key: PRATISIG_CORS_ORIGIN_REGEX
+        value: 'https://.*\.vercel\.app'
+
+      # ── Optionnels : à renseigner dans le tableau de bord Render ─
+      - key: PRATISIG_GEE_SERVICE_ACCOUNT_EMAIL
+        sync: false
+      - key: PRATISIG_GEE_SERVICE_ACCOUNT_KEY_JSON
+        sync: false
+      - key: PRATISIG_LLM_ENABLED
+        value: "false"
+      - key: PRATISIG_LLM_API_KEY
+        sync: false
+
+    # Le cache disque survit aux redémarrages (le plan gratuit n'a pas de
+    # disque persistant : le cache est alors simplement reconstruit).
+    disk:
+      name: pratisig-cache
+      mountPath: /data
+      sizeGB: 1

@@ -78,6 +78,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -133,6 +134,12 @@ def root() -> dict[str, Any]:
     }
 
 
+def _scipy_available() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("scipy") is not None
+
+
 @app.get("/health", tags=["système"], summary="État de santé des services")
 def health() -> dict[str, Any]:
     from .services import gee
@@ -155,6 +162,15 @@ def health() -> dict[str, Any]:
             "status": "ok" if spatial.SHAPELY else "degraded",
             "detail": "opérations géométriques avancées" if spatial.SHAPELY else "repli pur Python",
             "powers": ["spatial"],
+        },
+        "isochrone_shapes": {
+            "status": "ok" if _scipy_available() else "degraded",
+            "detail": (
+                "alpha-shape (contour concave)"
+                if _scipy_available()
+                else "scipy absent — repli sur l'enveloppe convexe, zone surestimée"
+            ),
+            "powers": ["routing"],
         },
         "geopandas": {
             "status": "ok" if exports.GEOPANDAS else "degraded",
