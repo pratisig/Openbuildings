@@ -58,7 +58,24 @@ if ($item) {
     Good 'ABSENT - bonne nouvelle'
 }
 
-# -- 2. Detournement de PowerShell --------------------------------
+# -- 2. Le chargeur : powershell.ps1 dans System32 ----------------
+Section 'Fichier System32\powershell.ps1 (chargeur)'
+$loader = Join-Path $env:windir 'System32\powershell.ps1'
+$li = Get-Item $loader -Force -ErrorAction SilentlyContinue
+if ($li) {
+    Bad "PRESENT : $($li.FullName)"
+    Line "  Taille        : $($li.Length) octets"
+    Line "  Creation      : $($li.CreationTime)"
+    try {
+        Line "  SHA-256       : $((Get-FileHash $loader -Algorithm SHA256 -ErrorAction Stop).Hash)"
+    } catch { }
+    Bad '  Un .ps1 dans System32 n est jamais legitime.'
+    Bad '  Il precede powershell.exe si PATHEXT contient .PS1.'
+} else {
+    Good 'ABSENT'
+}
+
+# -- 3. Detournement de PowerShell --------------------------------
 Section 'Resolution de la commande powershell'
 $expected = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe'
 Get-Command powershell -All -ErrorAction SilentlyContinue | ForEach-Object {
@@ -78,7 +95,22 @@ if ($ftype -and $ftype -notmatch 'powershell\.exe') {
     Good 'Association normale'
 }
 
-# -- 3. PATH : dossiers inscriptibles avant System32 --------------
+Section 'PATHEXT (.PS1 avant .EXE = detournement possible)'
+Line "PATHEXT : $env:PATHEXT"
+if ($env:PATHEXT -match '\.PS1') {
+    $ext = $env:PATHEXT -split ';'
+    $iPs1 = [Array]::IndexOf($ext, '.PS1')
+    $iExe = [Array]::IndexOf($ext, '.EXE')
+    if ($iPs1 -ge 0 -and $iExe -ge 0 -and $iPs1 -lt $iExe) {
+        Bad 'DANGEREUX : .PS1 precede .EXE - powershell.ps1 passerait avant powershell.exe'
+    } else {
+        Warn '.PS1 present dans PATHEXT mais apres .EXE'
+    }
+} else {
+    Good '.PS1 absent de PATHEXT (configuration normale)'
+}
+
+# -- 4. PATH : dossiers inscriptibles avant System32 --------------
 Section 'PATH - dossiers prioritaires suspects'
 $system32 = Join-Path $env:windir 'System32'
 $paths = $env:PATH -split ';' | Where-Object { $_ }
