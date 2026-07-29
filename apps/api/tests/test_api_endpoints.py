@@ -209,7 +209,7 @@ class TestExports:
 
     def test_geojsonl_one_line_per_feature(self, client):
         r = client.post("/api/exports/create", json={"format": "geojsonl", "data": POINTS})
-        lines = [l for l in r.content.decode().splitlines() if l.strip()]
+        lines = [line for line in r.content.decode().splitlines() if line.strip()]
         assert len(lines) == 3
         assert json.loads(lines[0])["type"] == "Feature"
 

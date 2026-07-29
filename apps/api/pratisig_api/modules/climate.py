@@ -41,7 +41,7 @@ class ClimateRequest(BaseModel):
     parameters: list[str] = Field(default_factory=lambda: ["PRECTOTCORR", "T2M"])
 
     @model_validator(mode="after")
-    def _check(self) -> "ClimateRequest":
+    def _check(self) -> ClimateRequest:
         try:
             start = date.fromisoformat(self.start)
             end = date.fromisoformat(self.end)

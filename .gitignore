@@ -28,3 +28,7 @@ credentials.json
 # Système
 .DS_Store
 Thumbs.db
+
+# Secrets déposés localement
+secrets/*
+!secrets/README.md

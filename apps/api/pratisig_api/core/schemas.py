@@ -16,7 +16,7 @@ class BBoxModel(BaseModel):
     ymax: float = Field(..., ge=-90, le=90)
 
     @model_validator(mode="after")
-    def _check_order(self) -> "BBoxModel":
+    def _check_order(self) -> BBoxModel:
         if self.xmin > self.xmax or self.ymin > self.ymax:
             raise ValueError("BBox invalide : min doit être inférieur à max")
         return self
@@ -46,7 +46,7 @@ class AreaOfInterest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _at_least_one(self) -> "AreaOfInterest":
+    def _at_least_one(self) -> AreaOfInterest:
         if not any([self.bbox, self.center, self.geojson, self.admin_code]):
             raise ValueError("Fournir bbox, center+radius_m, geojson ou admin_code")
         if self.center is not None and self.radius_m is None:

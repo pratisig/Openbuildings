@@ -30,7 +30,7 @@ class DuckDBEngine:
         self._loaded_extensions: list[str] = []
 
     # ── Cycle de vie ───────────────────────────────────────────────
-    def connect(self) -> "DuckDBEngine":
+    def connect(self) -> DuckDBEngine:
         with self._lock:
             if self._conn is not None:
                 return self
@@ -101,7 +101,7 @@ class DuckDBEngine:
         with self._lock:
             cur = self.connection.execute(sql, params or [])
             columns = [d[0] for d in cur.description]
-            return [dict(zip(columns, row)) for row in cur.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
 
     def query_geojson(
         self,

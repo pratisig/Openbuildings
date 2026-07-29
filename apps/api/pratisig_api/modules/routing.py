@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..core import cache
-from ..core.geo import BBox, circle_polygon, haversine_m
+from ..core.geo import circle_polygon, haversine_m
 from ..core.http import UpstreamError, get_json
 
 log = logging.getLogger("pratisig.routing")

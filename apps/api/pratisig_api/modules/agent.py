@@ -319,7 +319,7 @@ async def execute_tool(name: str, args: dict[str, Any], map_context: dict[str, A
         if name == "spatial_analysis":
             from .spatial import SpatialRequest, run
 
-            layers = {l.get("name"): l for l in (map_context or {}).get("layers", [])}
+            layers = {layer.get("name"): layer for layer in (map_context or {}).get("layers", [])}
             layer_a = layers.get(args.get("layer_a_name"))
             if not layer_a or not layer_a.get("data"):
                 return {
@@ -398,8 +398,9 @@ async def chat(payload: ChatRequest) -> dict[str, Any]:
     context_note = ""
     if map_context.get("layers"):
         names = [
-            f"- {l.get('name')} ({l.get('count', '?')} entités, type {l.get('geometry_type', '?')})"
-            for l in map_context["layers"]
+            f"- {layer.get('name')} ({layer.get('count', '?')} entités, "
+            f"type {layer.get('geometry_type', '?')})"
+            for layer in map_context["layers"]
         ]
         context_note = "\n\nCOUCHES ACTUELLEMENT SUR LA CARTE :\n" + "\n".join(names)
     if map_context.get("bbox"):

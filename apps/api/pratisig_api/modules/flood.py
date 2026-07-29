@@ -42,7 +42,7 @@ class FloodAnalysisRequest(BaseModel):
     include_geometry: bool = Field(False, description="Retourner le contour vectorisé (plus lent)")
 
     @model_validator(mode="after")
-    def _defaults(self) -> "FloodAnalysisRequest":
+    def _defaults(self) -> FloodAnalysisRequest:
         if not self.reference_start:
             year = int(self.flood_start[:4]) - 1
             self.reference_start = f"{year}{self.flood_start[4:]}"

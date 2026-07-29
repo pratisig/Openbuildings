@@ -10,7 +10,6 @@ Objectif : un seul endroit pour répondre à « quelle est ma zone d'étude ? »
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 

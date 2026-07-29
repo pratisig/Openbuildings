@@ -8,8 +8,9 @@ calcul de surface et de distance.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 EARTH_RADIUS_M = 6_371_008.8
 
@@ -34,13 +35,13 @@ class BBox:
             raise GeoError("Latitudes hors bornes [-90, 90]")
 
     @classmethod
-    def from_list(cls, values: Sequence[float]) -> "BBox":
+    def from_list(cls, values: Sequence[float]) -> BBox:
         if len(values) != 4:
             raise GeoError("BBox attendue sous la forme [xmin, ymin, xmax, ymax]")
         return cls(*(float(v) for v in values))
 
     @classmethod
-    def from_center(cls, lon: float, lat: float, radius_m: float) -> "BBox":
+    def from_center(cls, lon: float, lat: float, radius_m: float) -> BBox:
         dlon, dlat = meters_to_degrees(radius_m, lat)
         return cls(
             max(-180.0, lon - dlon),
@@ -50,7 +51,7 @@ class BBox:
         )
 
     @classmethod
-    def from_geojson(cls, geometry: dict[str, Any]) -> "BBox":
+    def from_geojson(cls, geometry: dict[str, Any]) -> BBox:
         coords = list(iter_coordinates(geometry))
         if not coords:
             raise GeoError("Géométrie sans coordonnées")
@@ -61,7 +62,7 @@ class BBox:
     def to_list(self) -> list[float]:
         return [self.xmin, self.ymin, self.xmax, self.ymax]
 
-    def expand(self, ratio: float) -> "BBox":
+    def expand(self, ratio: float) -> BBox:
         dx = (self.xmax - self.xmin) * ratio
         dy = (self.ymax - self.ymin) * ratio
         return BBox(
@@ -336,8 +337,8 @@ def centroid(geometry: dict[str, Any]) -> tuple[float, float]:
                 sum(p[1] for p in parts) / len(parts),
             )
         return (
-            sum(p[0] * w for p, w in zip(parts, weights)) / total,
-            sum(p[1] * w for p, w in zip(parts, weights)) / total,
+            sum(p[0] * w for p, w in zip(parts, weights, strict=True)) / total,
+            sum(p[1] * w for p, w in zip(parts, weights, strict=True)) / total,
         )
 
     if gtype == "GeometryCollection":

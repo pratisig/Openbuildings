@@ -1,0 +1,51 @@
+# PratiSIG Platform — pile complète en une commande.
+#
+# Remplace les déploiements dispersés d'avant : Streamlit Cloud (x4),
+# Render (Flask), Vercel/Netlify (React), PythonAnywhere.
+#
+#   docker compose up -d       → interface sur http://localhost:8080
+#   docker compose logs -f api
+
+services:
+  api:
+    build:
+      context: ./apps/api
+      args:
+        INSTALL_EXTRAS: ${INSTALL_EXTRAS:-full}
+    container_name: pratisig-api
+    restart: unless-stopped
+    environment:
+      PRATISIG_ENVIRONMENT: ${PRATISIG_ENVIRONMENT:-production}
+      PRATISIG_DEBUG: ${PRATISIG_DEBUG:-false}
+      PRATISIG_DUCKDB_MEMORY_LIMIT: ${PRATISIG_DUCKDB_MEMORY_LIMIT:-4GB}
+      PRATISIG_DUCKDB_THREADS: ${PRATISIG_DUCKDB_THREADS:-4}
+      PRATISIG_OVERTURE_RELEASE: ${PRATISIG_OVERTURE_RELEASE:-2025-01-22.0}
+      # Earth Engine (imagerie et inondations) — optionnel
+      PRATISIG_GEE_SERVICE_ACCOUNT_EMAIL: ${PRATISIG_GEE_SERVICE_ACCOUNT_EMAIL:-}
+      PRATISIG_GEE_SERVICE_ACCOUNT_KEY_FILE: ${PRATISIG_GEE_SERVICE_ACCOUNT_KEY_FILE:-}
+      # Agent cartographique — optionnel
+      PRATISIG_LLM_ENABLED: ${PRATISIG_LLM_ENABLED:-false}
+      PRATISIG_LLM_PROVIDER: ${PRATISIG_LLM_PROVIDER:-openai}
+      PRATISIG_LLM_MODEL: ${PRATISIG_LLM_MODEL:-gpt-4o-mini}
+      PRATISIG_LLM_API_KEY: ${PRATISIG_LLM_API_KEY:-}
+    volumes:
+      - ./data:/data
+      - ./secrets:/secrets:ro
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build: ./apps/web
+    container_name: pratisig-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
