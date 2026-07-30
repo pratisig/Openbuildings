@@ -127,8 +127,11 @@ def _bbox_clause(bbox: BBox) -> str:
 
 @router.get("/themes", summary="Thèmes Overture disponibles")
 def list_themes() -> dict[str, Any]:
+    from ..services.overture_release import status as release_status
+
     return {
         "release": settings.overture_release,
+        "release_info": release_status(),
         "themes": {
             key: {
                 "id": key,

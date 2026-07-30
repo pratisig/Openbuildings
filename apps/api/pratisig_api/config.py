@@ -60,7 +60,14 @@ class Settings(BaseSettings):
     duckdb_extensions: list[str] = Field(default_factory=lambda: ["spatial", "httpfs"])
 
     # ── Overture Maps ──────────────────────────────────────────────
-    overture_release: str = "2025-06-25.0"
+    # Overture SUPPRIME ses versions apres 60 jours : coder une date en dur
+    # condamne le module a cesser de fonctionner deux mois plus tard.
+    # La version est donc resolue dynamiquement au demarrage
+    # (services/overture_release.py). Ces deux reglages restent disponibles :
+    #   - _pinned  : force une version precise (desactive la resolution) ;
+    #   - _fallback: utilisee si le catalogue est injoignable.
+    overture_release_pinned: str | None = None
+    overture_release_fallback: str = "2026-07-22.0"
     # Acces S3 anonyme (verifie le 29/07/2026) : c'est le seul mode qui
     # fonctionne. En HTTPS pur, DuckDB ne sait pas resoudre les jokers du
     # chemin (« Globbing is not supported ») car il n'y a pas d'API de
@@ -111,6 +118,13 @@ class Settings(BaseSettings):
 
     # ── Sécurité / quotas ──────────────────────────────────────────
     max_export_features: int = 500_000
+
+    @property
+    def overture_release(self) -> str:
+        """Version courante, resolue dynamiquement puis mise en cache."""
+        from .services.overture_release import get_release
+
+        return get_release()
 
     @property
     def overture_release_path(self) -> str:

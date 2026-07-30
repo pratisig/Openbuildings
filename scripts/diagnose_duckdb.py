@@ -22,10 +22,32 @@ OVERTURE_S3 = "s3://overturemaps-us-west-2/release"
 OVERTURE_HTTPS = "https://overturemaps-us-west-2.s3.amazonaws.com/release"
 
 # Versions Overture à tester, de la plus récente à la plus ancienne
-CANDIDATE_RELEASES = [
-    "2025-06-25.0", "2025-05-21.0", "2025-04-23.0", "2025-03-19.0",
-    "2025-02-19.0", "2025-01-22.0", "2024-12-18.0", "2024-11-13.0",
-]
+# Overture supprime ses versions apres 60 jours : la liste est donc
+# recuperee dynamiquement, avec quelques valeurs de secours.
+FALLBACK_RELEASES = ["2026-07-22.0", "2026-06-17.0"]
+
+
+def live_releases() -> list[str]:
+    """Versions actuellement publiees par Overture."""
+    import json
+    import urllib.request
+
+    for url in ("https://labs.overturemaps.org/data/releases.json",
+                "https://stac.overturemaps.org/catalog.json"):
+        try:
+            with urllib.request.urlopen(url, timeout=8) as response:
+                data = json.loads(response.read().decode())
+            found = data.get("releases") or ([data["latest"]] if data.get("latest") else [])
+            if found:
+                print(f"  catalogue : {url} -> {found[:4]}")
+                return list(found)[:6]
+        except Exception as exc:
+            print(f"  catalogue injoignable ({url}) : {str(exc)[:50]}")
+    print(f"  repli sur : {FALLBACK_RELEASES}")
+    return FALLBACK_RELEASES
+
+
+CANDIDATE_RELEASES = FALLBACK_RELEASES
 
 
 def connect():
@@ -97,9 +119,10 @@ def probe_overture(conn) -> tuple[str | None, str | None]:
     print("=" * 68)
 
     # S3 anonyme d'abord : c'est le seul mode qui resout les jokers.
+    releases = live_releases()
     for label, base in (("S3 anonyme", OVERTURE_S3), ("HTTPS public", OVERTURE_HTTPS)):
         print(f"\nMode {label} :")
-        for release in CANDIDATE_RELEASES:
+        for release in releases:
             path = f"{base}/{release}/theme=places/type=place/*"
             try:
                 conn.execute(f"SELECT 1 FROM read_parquet('{path}') LIMIT 1").fetchone()

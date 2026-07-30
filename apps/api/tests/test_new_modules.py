@@ -757,10 +757,11 @@ class TestDiagnoseScript:
         assert self.SCRIPT.exists()
         ast.parse(self.SCRIPT.read_text(encoding="utf-8"))
 
-    def test_probes_multiple_releases(self):
+    def test_fetches_releases_dynamically(self):
+        """Les versions ne doivent pas etre figees : Overture les supprime."""
         src = self.SCRIPT.read_text(encoding="utf-8")
-        assert "CANDIDATE_RELEASES" in src
-        assert src.count('"20') >= 5, "tester plusieurs versions Overture"
+        assert "live_releases" in src
+        assert "labs.overturemaps.org/data/releases.json" in src
 
 
 class TestBuildingsSchema:
@@ -802,30 +803,50 @@ class TestBuildingsSchema:
 
 
 class TestOvertureAccess:
-    """Overture doit utiliser l'acces HTTPS public par defaut.
+    """Overture supprime ses versions apres 60 jours.
 
-    Regression : le bucket S3 est en mode « requester pays ». Sans
-    identifiants AWS, DuckDB renvoie « No files found » pour toutes les
-    versions -- le message laisse croire a une mauvaise version.
+    Regression : huit versions codees en dur renvoyaient toutes
+    « No files found » -- non pas a cause d'un mauvais chemin, mais parce que
+    les fichiers avaient ete supprimes. Coder une date en dur condamne le
+    module a cesser de fonctionner deux mois apres chaque publication.
     """
+
+    def test_release_is_resolved_dynamically(self):
+        from pratisig_api.config import settings
+
+        assert settings.overture_release_pinned is None, (
+            "aucune version ne doit etre figee par defaut"
+        )
+        assert settings.overture_release, "une version doit toujours etre disponible"
+
+    def test_pinned_release_takes_precedence(self):
+        import pratisig_api.config as config
+        from pratisig_api.services.overture_release import get_release
+
+        original = config.settings.overture_release_pinned
+        try:
+            config.settings.overture_release_pinned = "2099-01-01.0"
+            assert get_release() == "2099-01-01.0"
+        finally:
+            config.settings.overture_release_pinned = original
+
+    def test_fallback_is_used_without_network(self):
+        """Sans catalogue joignable, le repli evite un plantage."""
+        from pratisig_api.config import settings
+
+        assert settings.overture_release_fallback
+        assert settings.overture_release_fallback.count("-") == 2
 
     def test_s3_anonymous_is_default(self):
         """S3 anonyme : seul mode resolvant les jokers du chemin.
 
-        En HTTPS pur, DuckDB renvoie « Globbing is not supported » car il
-        n'existe pas d'API de listing de repertoire.
+        En HTTPS pur, DuckDB renvoie « Globbing is not supported » faute
+        d'API de listing de repertoire.
         """
         from pratisig_api.config import settings
 
         assert settings.overture_use_s3 is True
         assert settings.overture_release_path.startswith("s3://")
-
-    def test_https_remains_available(self):
-        """Le mode HTTPS reste accessible pour un chemin de fichier explicite."""
-        from pratisig_api.config import Settings
-
-        configured = Settings(overture_use_s3=False)
-        assert configured.overture_release_path.startswith("https://")
 
     def test_engine_sets_anonymous_credentials(self):
         """Sans identifiants vides, DuckDB tente une authentification AWS."""
@@ -840,3 +861,9 @@ class TestOvertureAccess:
         from pratisig_api.config import settings
 
         assert settings.overture_release in settings.overture_release_path
+
+    def test_status_is_exposed(self):
+        from pratisig_api.services.overture_release import status
+
+        info = status()
+        assert "release" in info and "source" in info and "access" in info
