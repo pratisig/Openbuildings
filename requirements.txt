@@ -6,5 +6,6 @@ pyogrio>=0.7
 shapely>=2.0
 pyarrow>=14
 requests>=2.31
+aiohttp>=3.9
 fsspec>=2024.2
 earthengine-api>=0.1.390
