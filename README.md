@@ -1,56 +1,180 @@
 # Open Buildings Downloader
 
-Application Streamlit pour extraire des bâtiments Open Buildings et les utiliser dans **ArcGIS Pro**. Elle évite l'export asynchrone de Google Earth Engine / Google Tasks quand la source **VIDA Google–Microsoft** est sélectionnée.
+Application Python/Streamlit permettant d'extraire des empreintes de bâtiments pour une zone d'intérêt et de les exporter, notamment dans une **géodatabase fichier compatible ArcGIS Pro**.
 
-## Démarrage rapide
+> Les données sont indicatives et ne remplacent pas le cadastre ni une donnée topographique validée.
 
-Utilisez Python 3.10 ou plus récent :
+## Fonctionnalités
 
-```bash
-git clone https://github.com/pratisig/Openbuildings.git
-cd Openbuildings
-python -m venv .venv
-# Linux / macOS
-source .venv/bin/activate
-# Windows PowerShell : .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-streamlit run app.py
+- Sélection d'une zone d'intérêt par **dessin sur carte**, import d'un **GeoJSON/JSON**, **GeoPackage** ou **Shapefile ZIP**, ou saisie d'une BBOX WGS 84.
+- Export des empreintes sous forme de **polygones** ou, en cochant l'option dédiée, sous forme de **centroïdes (points)**.
+- Formats de sortie : **File Geodatabase ArcGIS Pro (`.gdb.zip`)**, GeoJSON, Shapefile ZIP, GeoPackage, GeoParquet et CSV.
+- Sources disponibles :
+  - **VIDA Google–Microsoft** : GeoParquet par pays, avec lecture spatiale optimisée lorsque l'index est fourni.
+  - **Google Open Buildings v3 / Earth Engine** : seuil de confiance optionnel (`0.65`, `0.70`, `0.75`). Nécessite un compte/projet Earth Engine configuré.
+  - **OpenStreetMap / Overpass** : objets `building=*` issus de la cartographie collaborative.
+- Statistiques de base sur les bâtiments extraits et aperçu des attributs.
+
+## Sources : précision et limites
+
+| Source | Nature | Points forts | Limites |
+|---|---|---|---|
+| VIDA Google–Microsoft | Empreintes produites par IA | Couverture utile dans de nombreux pays du Sud global ; pas de compte Earth Engine requis | Forme, position et complétude dépendent de l'imagerie ; contrôler localement |
+| Google Open Buildings v3 | Empreintes IA, attribut `confidence` | Filtrage possible selon la confiance | Quotas, authentification et disponibilité Earth Engine ; un seuil élevé peut supprimer des bâtiments réels |
+| OpenStreetMap | Numérisation contributive | Peut être très détaillé et exact là où OSM est actif | Complétude et cohérence très variables selon le territoire ; serveur Overpass parfois chargé |
+
+Les données ouvertes Meta/Facebook HRSL sont des grilles de population/implantation, **pas** une couche mondiale d'empreintes de bâtiments. Elles ne sont donc pas proposées comme source de bâtiments afin d'éviter une confusion.
+
+## Installation et lancement sous Windows
+
+### Prérequis
+
+- Windows 10 ou 11
+- [Python 3.10 à 3.12](https://www.python.org/downloads/) installé, avec l'option **Add Python to PATH**
+- Une connexion Internet
+- Optionnel : [Git for Windows](https://git-scm.com/download/win)
+
+Ouvrez PowerShell et vérifiez Python :
+
+```powershell
+python --version
 ```
 
-Ouvrez ensuite l'adresse affichée par Streamlit, généralement `http://localhost:8501`.
+### Télécharger le projet
 
-## Utilisation recommandée (rapide et sans Earth Engine)
+**Avec Git :**
 
-1. Dans **Source des bâtiments**, choisissez **VIDA Google–Microsoft**.
-2. Sélectionnez un pays.
-3. Dessinez une petite zone, importez un GeoJSON/GPKG/Shapefile ZIP, ou saisissez une BBOX.
-4. Cochez **Exporter les centroïdes (points)** si vous voulez un point par bâtiment plutôt que les polygones.
-5. Choisissez **Géodatabase fichier ArcGIS Pro (ZIP)** puis téléchargez.
-6. Décompressez l'archive et ajoutez le dossier `.gdb` dans le catalogue ArcGIS Pro. La couche s'appelle `buildings`.
+```powershell
+cd D:\GIS\GEE
+git clone https://github.com/pratisig/Openbuildings.git
+cd Openbuildings
+```
 
-Le filtre spatial est transmis au lecteur GeoParquet avant le téléchargement. L'application ne doit donc pas charger l'intégralité du pays lorsque la source publie un index spatial. Pour de bons temps de réponse, limitez l'extraction à une ville, un quartier ou une emprise de projet.
+**Sans Git :** téléchargez le ZIP depuis GitHub (**Code > Download ZIP**), décompressez-le, puis entrez dans le dossier extrait. Pour la version en développement de ce projet, utilisez :
 
-## Autres sources et qualité
+```text
+https://github.com/pratisig/Openbuildings/archive/refs/heads/arena/019fb30c-openbuildings.zip
+```
 
-- **OpenStreetMap (Overpass)** est disponible dans l'application. Il extrait les objets portant le tag `building=*` pour l'emprise sélectionnée. Choisissez une zone modeste : le service public Overpass peut refuser les requêtes trop vastes ou être temporairement chargé.
-- **VIDA Google–Microsoft** et **Google Open Buildings v3** sont des empreintes produites par IA. Elles sont très utiles pour l'analyse à grande échelle, mais leur position, leur forme et leur complétude varient selon la qualité de l'imagerie. Le champ `confidence` de Google permet un filtrage, sans garantir l'exactitude.
-- **OSM** peut être plus exact là où des contributeurs ont numérisé les bâtiments, mais peut aussi être incomplet dans les zones peu cartographiées.
-- Les données **Meta/Facebook HRSL** ouvertes sont des grilles de population/implantation, et non une couche mondiale d'empreintes de bâtiments comparable aux trois sources ci-dessus. Elles ne sont donc pas proposées comme « bâtiments » afin d'éviter une interprétation erronée.
+Par exemple :
 
-Aucune de ces sources ne remplace le cadastre ou une donnée topographique validée.
+```powershell
+cd "D:\GIS\GEE\Openbuildings-arena-019fb30c-openbuildings"
+```
 
-## Source Google Earth Engine
+### Créer l'environnement et installer les dépendances
 
-L'option **Google Open Buildings v3 (Earth Engine)** est disponible avec les seuils `confidence` 0.65, 0.70 et 0.75. Elle dépend néanmoins des quotas, de l'authentification et de la disponibilité des serveurs Earth Engine : elle ne résout pas une saturation côté Google.
+À la racine du projet :
 
-Avant de l'utiliser, authentifiez Earth Engine sur la machine ou configurez des identifiants de service pour le déploiement, puis indiquez au besoin le projet Google Cloud autorisé. Réduisez fortement l'emprise si l'extraction échoue.
+```powershell
+python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
 
-## Formats acceptés pour la zone
+La commande `Set-ExecutionPolicy` ne modifie la politique que pour la fenêtre PowerShell en cours. Elle résout le blocage habituel des scripts d'activation.
 
-- GeoJSON / JSON
-- GeoPackage (`.gpkg`)
-- Shapefile contenu dans une archive ZIP
-- polygone ou rectangle dessiné sur la carte
-- BBOX WGS 84
+### Lancer l'application
 
-Les géométries importées sont converties en WGS 84 automatiquement.
+```powershell
+python -m streamlit run app.py
+```
+
+Ouvrez ensuite l'URL affichée, habituellement :
+
+```text
+http://localhost:8501
+```
+
+Pour arrêter le serveur : `Ctrl + C` dans PowerShell.
+
+> N'utilisez pas `streamlit run [app.py](http://app.py)` : cette écriture est un lien Markdown. La bonne commande est `python -m streamlit run app.py`.
+
+## Utilisation
+
+1. Choisissez une source dans la barre latérale.
+2. Avec **VIDA**, sélectionnez aussi le pays.
+3. Dessinez, importez ou saisissez la zone d'intérêt. Commencez par une zone petite (quartier, commune ou ville).
+4. Choisissez le format, puis cochez **Exporter les centroïdes (points)** si nécessaire.
+5. Cliquez sur **Télécharger les bâtiments**.
+6. Pour ArcGIS Pro, téléchargez le format **Géodatabase fichier ArcGIS Pro (ZIP)**, décompressez-le, puis ajoutez le dossier `.gdb` dans le catalogue ArcGIS Pro. La couche est nommée `buildings`.
+
+### Conseils de performance
+
+- VIDA est généralement le meilleur choix lorsque Earth Engine est chargé ou indisponible.
+- Ne demandez pas un pays entier dans une seule extraction. Découpez une grande étude en zones.
+- OSM/Overpass est un service communautaire : patientez et réessayez en cas d'erreur, ou réduisez l'emprise.
+- Earth Engine nécessite une authentification préalable et peut imposer des limites de téléchargement.
+
+## Version portable Windows (`.exe`)
+
+Une application Streamlit avec GeoPandas/GDAL ne se distribue pas fiablement sous la forme d'un unique petit fichier `.exe`. Le format conseillé est un **dossier portable** contenant `OpenBuildings.exe` et ses bibliothèques. Il peut être compressé et copié sur un autre PC Windows compatible, sans réinstaller Python.
+
+### Construire le dossier portable sous Windows
+
+Depuis la racine du projet :
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\build_windows_portable.ps1
+```
+
+Le résultat est créé dans :
+
+```text
+dist\OpenBuildings\
+```
+
+Compressez **le dossier entier** `OpenBuildings` en ZIP. Sur le poste utilisateur, décompressez-le puis démarrez :
+
+```text
+OpenBuildings.exe
+```
+
+L'application s'ouvre sur `http://localhost:8501`. Windows Defender peut afficher un avertissement car un EXE PyInstaller non signé est nouveau ; analysez le ZIP et ne diffusez que des versions construites depuis le dépôt vérifié.
+
+## Déploiement sur GitHub
+
+### Publier le code
+
+```powershell
+git status
+git add app.py requirements.txt README.md scripts launcher.py .github
+git commit -m "Mise à jour de l'application"
+git push origin main
+```
+
+Utilisez une branche et une Pull Request si votre organisation l'exige. Ne publiez jamais de mots de passe, clés API, fichiers `.env` ou identifiants de service Earth Engine.
+
+### Construire le ZIP portable avec GitHub Actions
+
+Le workflow `.github/workflows/windows-portable.yml` construit l'application sur `windows-latest` et ajoute un artefact téléchargeable.
+
+1. Poussez le workflow sur GitHub.
+2. Sur GitHub, ouvrez **Actions** > **Build Windows portable application** > **Run workflow**.
+3. À la fin du traitement, téléchargez l'artefact **OpenBuildings-Windows-portable**.
+4. Pour déclencher un build lors d'une version, créez et poussez un tag :
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+L'artefact GitHub Actions est adapté aux tests et à la distribution interne. Pour une publication officielle, créez une **GitHub Release**, attachez le ZIP portable, documentez la version et, idéalement, signez le binaire Windows.
+
+## Earth Engine : configuration
+
+La source Earth Engine est facultative. Elle dépend des autorisations de votre compte et du projet Google Cloud associé. Sur une machine de développement, installez les dépendances puis authentifiez-vous avec les outils Earth Engine adaptés à votre organisation. Renseignez si nécessaire le projet Google Cloud dans le champ de l'application. Les identifiants ne doivent pas être enregistrés dans le dépôt Git.
+
+## Dépannage
+
+| Message | Action recommandée |
+|---|---|
+| `streamlit is not recognized` | Activez `.venv` puis utilisez `python -m streamlit run app.py` |
+| `HTTPFileSystem requires requests and aiohttp` | Exécutez `python -m pip install -r requirements.txt` |
+| Échec VIDA | Vérifiez Internet, réessayez plus tard et réduisez l'emprise |
+| Échec Earth Engine | Vérifiez l'authentification/projet, réduisez la zone et réessayez plus tard |
+| Échec Overpass | Réduisez la zone ou réessayez après quelques minutes |
+| Erreur lors de l'activation `.venv` | Exécutez `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
