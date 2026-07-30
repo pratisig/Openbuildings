@@ -14,7 +14,18 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+def find_repo_root(start: Path) -> Path:
+    """Racine du depot : dans le repo (parents[3]) ou dans l'image Docker
+    (/app), detectee en remontant jusqu'au dossier data/reference.
+    L'ancien parents[3] levait IndexError au demarrage dans le conteneur."""
+    for parent in start.parents:
+        if (parent / "data" / "reference").is_dir():
+            return parent
+    # Dernier recours : ne jamais lever IndexError a l'import.
+    return start.parents[3] if len(start.parents) > 3 else start.parent
+
+
+REPO_ROOT = find_repo_root(Path(__file__).resolve())
 
 
 class Settings(BaseSettings):
