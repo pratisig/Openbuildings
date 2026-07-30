@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 import folium
+import fsspec
 import geopandas as gpd
 from folium.plugins import Draw
 import requests
@@ -108,7 +109,9 @@ def download_google_earth_engine_buildings(aoi, min_confidence, project_id=""):
         collection = collection.filter(ee.Filter.gte("confidence", min_confidence))
 
     try:
-        download_url = collection.getDownloadURL({"format": "GEOJSON", "filename": "open_buildings"})
+        # La signature Python est getDownloadURL(filetype, selectors, filename),
+        # contrairement à l'API JavaScript qui accepte un dictionnaire.
+        download_url = collection.getDownloadURL("GEOJSON", filename="open_buildings")
         response = requests.get(download_url, timeout=300)
         response.raise_for_status()
         # Earth Engine peut retourner directement du GeoJSON ou une archive ZIP
@@ -154,11 +157,16 @@ def download_buildings_by_country(iso_code, bbox=None):
         if bbox is not None:
             status.write("⏳ Lecture optimisée de la zone dans le GeoParquet...")
             try:
-                gdf = gpd.read_parquet(parquet_url, bbox=bbox.bounds)
+                # PyArrow sous Windows ne reconnaît pas toujours une URL HTTPS comme
+                # système de fichiers. fsspec fournit alors un fichier HTTP lisible
+                # par GeoPandas sans téléchargement manuel préalable.
+                with fsspec.open(parquet_url, "rb") as parquet_file:
+                    gdf = gpd.read_parquet(parquet_file, bbox=bbox.bounds)
             except (TypeError, ValueError):
                 # Compatibilité avec les anciennes versions de GeoPandas/PyArrow.
                 status.write("⚠️ Index spatial indisponible : lecture complète puis filtrage.")
-                gdf = gpd.read_parquet(parquet_url)
+                with fsspec.open(parquet_url, "rb") as parquet_file:
+                    gdf = gpd.read_parquet(parquet_file)
             initial_count = len(gdf)
             gdf = gdf[gdf.intersects(bbox)]
             status.write(f"📊 {len(gdf):,} bâtiments dans la zone (sur {initial_count:,} lus)")
@@ -179,8 +187,11 @@ def download_buildings_by_country(iso_code, bbox=None):
         
     except Exception as e:
         status.update(label=f"❌ Erreur: {str(e)}", state="error")
-        st.error(f"💡 Détails: Le pays '{iso_code}' n'est peut-être pas disponible dans le dataset.")
-        st.info("🗺️ **Couverture** : Afrique, Asie du Sud/Sud-Est, Amérique Latine, Caraïbes (185 pays)")
+        st.error(
+            f"💡 Détails : accès ou lecture des données impossible pour '{iso_code}'. "
+            "Vérifiez la connexion Internet, puis réessayez avec une zone plus petite."
+        )
+        st.info("🗺️ **Couverture VIDA** : Afrique, Asie du Sud/Sud-Est, Amérique Latine et Caraïbes.")
         return None
 
 def create_shapefile_zip(gdf: gpd.GeoDataFrame, base_name: str) -> bytes:
