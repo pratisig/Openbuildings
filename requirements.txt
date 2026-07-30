@@ -1,6 +1,9 @@
 streamlit
+streamlit-folium
+folium
 geopandas
 pyogrio>=0.7
+earthengine-api
 shapely
 pandas
 google-cloud-storage

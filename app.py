@@ -1,11 +1,18 @@
+import json
 import os
 import shutil
 import tempfile
 import zipfile
+from pathlib import Path
+
+import folium
 import geopandas as gpd
+from folium.plugins import Draw
 import pandas as pd
+import requests
 import streamlit as st
-from shapely.geometry import box
+from shapely.geometry import box, shape
+from streamlit_folium import st_folium
 from io import BytesIO
 import time
 
@@ -55,6 +62,77 @@ def prepare_regions(countries_gdf):
             regions.append(f"{name_val} ({iso_val})")
     
     return [""] + sorted(regions)
+
+def read_aoi_upload(uploaded_file):
+    """Lit une zone téléversée et renvoie une géométrie WGS 84 unique."""
+    suffix = Path(uploaded_file.name).suffix.lower()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_path = os.path.join(temp_dir, uploaded_file.name)
+        with open(input_path, "wb") as output:
+            output.write(uploaded_file.getbuffer())
+
+        if suffix == ".zip":
+            with zipfile.ZipFile(input_path) as archive:
+                archive.extractall(temp_dir)
+            shapefiles = list(Path(temp_dir).rglob("*.shp"))
+            if not shapefiles:
+                raise ValueError("Le ZIP doit contenir un Shapefile (.shp).")
+            gdf = gpd.read_file(shapefiles[0])
+        else:
+            gdf = gpd.read_file(input_path)
+
+    if gdf.empty:
+        raise ValueError("Le fichier ne contient aucune géométrie.")
+    if gdf.crs is None:
+        raise ValueError("Le système de coordonnées du fichier est inconnu.")
+    return gdf.to_crs("EPSG:4326").geometry.union_all()
+
+
+def download_google_earth_engine_buildings(aoi, min_confidence, project_id=""):
+    """Extrait Open Buildings v3 via Earth Engine pour une petite zone d'intérêt."""
+    try:
+        import ee
+    except ImportError as exc:
+        raise RuntimeError("Le paquet earthengine-api n'est pas installé.") from exc
+
+    try:
+        ee.Initialize(project=project_id or None)
+    except Exception as exc:
+        raise RuntimeError(
+            "Earth Engine n'est pas authentifié. Configurez les identifiants Earth Engine "
+            "et, si nécessaire, indiquez votre projet Google Cloud dans la barre latérale."
+        ) from exc
+
+    collection = ee.FeatureCollection("GOOGLE/Research/open-buildings/v3/polygons")
+    collection = collection.filterBounds(ee.Geometry(aoi.__geo_interface__))
+    if min_confidence is not None:
+        collection = collection.filter(ee.Filter.gte("confidence", min_confidence))
+
+    try:
+        download_url = collection.getDownloadURL({"format": "GEOJSON", "filename": "open_buildings"})
+        response = requests.get(download_url, timeout=300)
+        response.raise_for_status()
+        # Earth Engine peut retourner directement du GeoJSON ou une archive ZIP
+        # suivant le format négocié par son service de téléchargement.
+        if response.content[:2] == b"PK":
+            with tempfile.TemporaryDirectory() as temp_dir:
+                archive_path = os.path.join(temp_dir, "open_buildings.zip")
+                with open(archive_path, "wb") as archive:
+                    archive.write(response.content)
+                with zipfile.ZipFile(archive_path) as archive:
+                    archive.extractall(temp_dir)
+                geojson_files = list(Path(temp_dir).rglob("*.geojson")) + list(Path(temp_dir).rglob("*.json"))
+                if not geojson_files:
+                    raise ValueError("Archive Earth Engine sans fichier GeoJSON.")
+                return gpd.read_file(geojson_files[0]).to_crs("EPSG:4326")
+        payload = response.json()
+        return gpd.GeoDataFrame.from_features(payload["features"], crs="EPSG:4326")
+    except Exception as exc:
+        raise RuntimeError(
+            "L'extraction Earth Engine a échoué. Réduisez la zone d'intérêt : "
+            "le téléchargement direct est limité par Earth Engine."
+        ) from exc
+
 
 def download_buildings_by_country(iso_code, bbox=None):
     """Télécharge les bâtiments pour un pays via GeoParquet"""
@@ -179,7 +257,21 @@ def main():
     # Sidebar - Paramètres
     with st.sidebar:
         st.header("⚙️ Paramètres")
-        
+
+        data_source = st.radio(
+            "Source des bâtiments",
+            ["VIDA Google–Microsoft", "Google Open Buildings v3 (Earth Engine)"],
+            help="VIDA est la source ouverte actuelle. Earth Engine donne accès à la collection Google v3 et à son champ confidence."
+        )
+        ee_project_id = ""
+        min_confidence = None
+        if data_source == "Google Open Buildings v3 (Earth Engine)":
+            ee_project_id = st.text_input("Projet Google Cloud Earth Engine (optionnel)")
+            min_confidence = st.select_slider(
+                "Confiance minimale", options=["Aucun filtre", "0.65", "0.70", "0.75"], value="Aucun filtre"
+            )
+            min_confidence = None if min_confidence == "Aucun filtre" else float(min_confidence)
+
         export_format = st.selectbox(
             "📦 Format d'export",
             ["Géodatabase fichier ArcGIS Pro (ZIP)", "GeoJSON", "Shapefile (ZIP)", "GeoPackage (GPKG)", "GeoParquet", "CSV"],
@@ -217,60 +309,74 @@ def main():
         st.markdown("---")
         st.markdown("[📖 Documentation VIDA](https://source.coop/vida/google-microsoft-open-buildings)")
     
-    # Chargement des pays
-    countries_gdf = load_countries()
-    
+    # La liste des pays est nécessaire uniquement pour les fichiers VIDA par pays.
+    countries_gdf = load_countries() if data_source == "VIDA Google–Microsoft" else None
     if countries_gdf is not None:
         st.sidebar.success(f"✅ {len(countries_gdf)} pays disponibles")
-    
     regions_list = prepare_regions(countries_gdf)
     
-    # Interface simplifiée (un seul onglet : pays uniquement)
-    st.markdown("### 🌍 Sélectionner un pays")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        choice = st.selectbox("Pays :", regions_list, key="country_select")
-    
-    with col2:
-        use_bbox = st.checkbox("Filtrer par zone", help="Extraire uniquement une partie du pays")
-    
-    # BBox optionnel
-    bbox_geom = None
-    if use_bbox and choice and choice != "":
-        st.markdown("#### 📐 Zone à extraire (optionnel)")
-        st.caption("Obtenez les coordonnées sur [bboxfinder.com](http://bboxfinder.com)")
-        
+    st.markdown("### 🌍 Zone d'intérêt")
+    choice = ""
+    if data_source == "VIDA Google–Microsoft":
+        choice = st.selectbox("Pays (requis pour la source VIDA) :", regions_list, key="country_select")
+
+    aoi_geom = None
+    aoi_method = st.radio(
+        "Définir la zone", ["Dessiner sur la carte", "Importer un fichier", "Coordonnées BBOX"], horizontal=True
+    )
+    if aoi_method == "Dessiner sur la carte":
+        st.caption("Utilisez les outils polygon ou rectangle situés en haut à gauche de la carte.")
+        map_view = folium.Map(location=[14.72, -17.47], zoom_start=11, tiles="OpenStreetMap")
+        Draw(export=False, draw={"polyline": False, "marker": False, "circle": False, "circlemarker": False}).add_to(map_view)
+        map_state = st_folium(map_view, height=430, use_container_width=True, key="aoi_map")
+        drawings = map_state.get("all_drawings") or []
+        if drawings:
+            aoi_geom = shape(drawings[-1]["geometry"])
+            st.success("✅ Zone dessinée prise en compte.")
+    elif aoi_method == "Importer un fichier":
+        uploaded_aoi = st.file_uploader("Zone d'intérêt", type=["geojson", "json", "gpkg", "zip"])
+        if uploaded_aoi:
+            try:
+                aoi_geom = read_aoi_upload(uploaded_aoi)
+                st.success("✅ Zone importée et reprojetée en WGS 84.")
+            except Exception as exc:
+                st.error(f"❌ Fichier de zone non valide : {exc}")
+    else:
+        st.caption("Coordonnées en degrés WGS 84 (longitude / latitude).")
         col1, col2, col3, col4 = st.columns(4)
-        w = col1.number_input("⬅️ Ouest (Lon)", value=0.0, format="%.6f", key="west")
-        s = col2.number_input("🔽 Sud (Lat)", value=0.0, format="%.6f", key="south")
-        e = col3.number_input("➡️ Est (Lon)", value=0.0, format="%.6f", key="east")
-        n = col4.number_input("🔼 Nord (Lat)", value=0.0, format="%.6f", key="north")
-        
-        if all([w != 0.0, s != 0.0, e != 0.0, n != 0.0]):
-            if n > s and e > w:
-                bbox_geom = box(w, s, e, n)
-                st.success(f"✅ Zone définie : ({w:.4f}, {s:.4f}, {e:.4f}, {n:.4f})")
-            else:
-                st.error("❌ Coordonnées invalides : Nord > Sud et Est > Ouest")
+        w = col1.number_input("⬅️ Ouest", value=-17.50, format="%.6f")
+        s = col2.number_input("🔽 Sud", value=14.65, format="%.6f")
+        e = col3.number_input("➡️ Est", value=-17.35, format="%.6f")
+        n = col4.number_input("🔼 Nord", value=14.80, format="%.6f")
+        if n > s and e > w:
+            aoi_geom = box(w, s, e, n)
+        else:
+            st.error("❌ Coordonnées invalides : Nord doit être supérieur à Sud et Est à Ouest.")
 
     # Bouton d'extraction
     if st.button("🚀 Télécharger les bâtiments", type="primary", use_container_width=True):
-        if not choice or choice == "":
-            st.warning("⚠️ Veuillez sélectionner un pays")
+        if data_source == "VIDA Google–Microsoft" and not choice:
+            st.warning("⚠️ Veuillez sélectionner un pays pour la source VIDA.")
             return
-        
+        if aoi_geom is None:
+            st.warning("⚠️ Dessinez, importez ou renseignez une zone d'intérêt.")
+            return
+
         try:
-            # Extraire le code ISO
-            iso_code = choice.split('(')[-1].strip(')')
+            iso_code = choice.split('(')[-1].strip(')') if choice else "GEE"
             name = iso_code
             
             st.markdown("---")
-            st.subheader(f"📥 Téléchargement pour {choice}")
-            
-            # Téléchargement
-            buildings_gdf = download_buildings_by_country(iso_code, bbox_geom)
+            st.subheader(f"📥 Téléchargement : {data_source}")
+
+            # VIDA lit le GeoParquet du pays puis conserve les bâtiments qui
+            # intersectent la géométrie ; Earth Engine applique le filtre côté serveur.
+            if data_source == "VIDA Google–Microsoft":
+                buildings_gdf = download_buildings_by_country(iso_code, aoi_geom)
+            else:
+                buildings_gdf = download_google_earth_engine_buildings(
+                    aoi_geom, min_confidence, ee_project_id
+                )
             
             # Résultats
             if buildings_gdf is None or buildings_gdf.empty:
