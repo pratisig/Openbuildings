@@ -5,7 +5,8 @@
 
 [![API](https://img.shields.io/badge/API-FastAPI-009688)](apps/api)
 [![Front](https://img.shields.io/badge/Front-React%20%2B%20MapLibre-61dafb)](apps/web)
-[![Tests](https://img.shields.io/badge/tests-140%20passants-2a9d8f)](apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-180%20passants-2a9d8f)](apps/api/tests)
+[![Validé](https://img.shields.io/badge/valid%C3%A9-20%2F20%20modules-0f766e)](docs/DEPLOIEMENT.md)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 ---

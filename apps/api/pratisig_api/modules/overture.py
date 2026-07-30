@@ -228,6 +228,11 @@ def query_overture(payload: OvertureQuery) -> dict[str, Any]:
             "release": settings.overture_release,
             "limit_reached": len(result["features"]) >= payload.limit,
             "cached": False,
+            "note": (
+                "Le premier acces a une version Overture ouvre les metadonnees "
+                "S3 (plusieurs dizaines de secondes). Les requetes suivantes "
+                "sont servies depuis le cache."
+            ),
         },
     }
     cache.set(CACHE_NS, key, response)

@@ -53,6 +53,14 @@ class DuckDBEngine:
                 # et echoue avec « No files found », message trompeur.
                 conn.execute("SET s3_access_key_id='';")
                 conn.execute("SET s3_secret_access_key='';")
+                # Conserve les metadonnees Parquet entre les requetes.
+                # Sans ce cache, DuckDB relit les pieds de page des fichiers
+                # S3 a chaque appel : 84 s observees sur une requete Overture,
+                # dont l'essentiel en ouverture de metadonnees.
+                try:
+                    conn.execute("SET enable_object_cache=true;")
+                except Exception:
+                    pass
             except Exception:
                 pass
             conn.execute(f"SET memory_limit='{settings.duckdb_memory_limit}';")

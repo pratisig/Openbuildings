@@ -341,7 +341,37 @@ la gestion est simplifiée et l'URL est unique.
 
 ---
 
-## 6. Ce qui est vérifié, ce qui ne l'est pas
+## 6. Validation en conditions réelles
+
+Campagne menée le 30/07/2026 depuis un poste Windows 11, connexion sénégalaise.
+**20 modules fonctionnels, 0 erreur.** Tous les services externes ont répondu :
+Nominatim, GADM, Overpass, OSRM, NASA POWER, source.coop et Overture S3.
+
+Quatre défauts n'étaient visibles que dans ces conditions — l'environnement de
+développement bloque ces domaines :
+
+| Défaut | Cause | Correction |
+|---|---|---|
+| Overpass `504` | Instance principale surchargée, point unique de défaillance | 4 miroirs en cascade |
+| Open Buildings `Binder Error` | La clé primaire s'appelle `boundary_id`, pas `id` | Requête corrigée, schéma documenté |
+| Overture `No files found` | Overture supprime ses versions après 60 jours | Résolution dynamique via le catalogue officiel |
+| Overture `timed out` (45 s) | Filtre `bbox` sans borne inférieure : aucun élagage possible | Encadrement bilatéral (`BETWEEN`) |
+
+### Temps de réponse observés
+
+| Module | Premier appel | Ensuite |
+|---|---|---|
+| Géocodage, GADM, OSRM, climat | < 3 s | mis en cache |
+| Overpass | 3 à 12 s | mis en cache |
+| Open Buildings | ~20 s | mis en cache |
+| Overture | 60 à 90 s | mis en cache |
+
+Le premier accès à Overture ouvre les métadonnées de plusieurs fichiers S3 :
+c'est lent par nature. Les appels suivants sont servis depuis le cache.
+Si Overture est trop lent pour votre usage, le module OSM couvre des besoins
+voisins (POI, routes, bâtiments) avec des temps bien inférieurs.
+
+## 7. Ce qui est vérifié, ce qui ne l'est pas
 
 **Vérifié** : 140 tests passants, lint propre, build de l'interface, API
 démarrée avec toutes ses routes fonctionnelles, calculs (scoring foncier,
