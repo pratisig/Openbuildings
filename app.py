@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import zipfile
 import geopandas as gpd
@@ -118,13 +119,55 @@ def create_shapefile_zip(gdf: gpd.GeoDataFrame, base_name: str) -> bytes:
         return zip_buffer.getvalue()
 
 def create_geopackage(gdf: gpd.GeoDataFrame, base_name: str) -> bytes:
-    """Crée un fichier GeoPackage (SQLite spatial)"""
+    """Crée un fichier GeoPackage (SQLite spatial)."""
     with tempfile.TemporaryDirectory() as temp_dir:
         gpkg_path = os.path.join(temp_dir, f"{base_name}.gpkg")
         gdf.to_file(gpkg_path, driver="GPKG", layer="buildings")
-        
+
         with open(gpkg_path, 'rb') as f:
             return f.read()
+
+
+def create_file_geodatabase_zip(gdf: gpd.GeoDataFrame, base_name: str) -> bytes:
+    """Crée une géodatabase fichier ESRI et la compresse pour le téléchargement.
+
+    Une .gdb est un dossier composé de plusieurs fichiers, elle doit donc être
+    distribuée dans une archive ZIP. Après extraction, le dossier .gdb peut être
+    ajouté directement dans ArcGIS Pro.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        gdb_name = f"{base_name}.gdb"
+        gdb_path = os.path.join(temp_dir, gdb_name)
+
+        try:
+            # OpenFileGDB est le pilote GDAL libre qui crée les File Geodatabases.
+            # GeoPandas utilise pyogrio lorsqu'il est disponible.
+            gdf.to_file(
+                gdb_path, driver="OpenFileGDB", layer="buildings", engine="pyogrio"
+            )
+        except Exception:
+            # Certaines installations GDAL proposent uniquement le pilote ESRI
+            # propriétaire (FileGDB). On l'essaie avant de signaler une erreur utile.
+            if os.path.isdir(gdb_path):
+                shutil.rmtree(gdb_path)
+            try:
+                gdf.to_file(
+                    gdb_path, driver="FileGDB", layer="buildings", engine="pyogrio"
+                )
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    "Impossible de créer la géodatabase. Installez une version de "
+                    "GDAL/pyogrio avec le pilote OpenFileGDB (GDAL 3.6 ou plus récent)."
+                ) from fallback_exc
+
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for root, _, files in os.walk(gdb_path):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    zip_file.write(file_path, os.path.relpath(file_path, temp_dir))
+
+        return zip_buffer.getvalue()
 
 def main():
     st.title("🏢 Open Buildings Downloader")
@@ -139,8 +182,12 @@ def main():
         
         export_format = st.selectbox(
             "📦 Format d'export",
-            ["GeoJSON", "Shapefile (ZIP)", "GeoPackage (GPKG)", "GeoParquet", "CSV"],
-            help="GeoJSON : universel\nShapefile : compatible SIG\nGeoPackage : recommandé\nGeoParquet : format cloud-native"
+            ["Géodatabase fichier ArcGIS Pro (ZIP)", "GeoJSON", "Shapefile (ZIP)", "GeoPackage (GPKG)", "GeoParquet", "CSV"],
+            help=(
+                "Géodatabase fichier : format natif ArcGIS Pro, livré dans un ZIP à extraire\n"
+                "GeoJSON : universel\nShapefile : compatible SIG\n"
+                "GeoPackage : recommandé pour les SIG libres\nGeoParquet : format cloud-native"
+            )
         )
         
         simplify_geom = st.checkbox(
@@ -269,7 +316,12 @@ def main():
                 mime_type = None
                 
                 with st.spinner(f"📦 Préparation du fichier {export_format}..."):
-                    if export_format == "GeoJSON":
+                    if export_format == "Géodatabase fichier ArcGIS Pro (ZIP)":
+                        file_data = create_file_geodatabase_zip(buildings_gdf, f"{name}_open_buildings")
+                        filename = f"{name}_open_buildings.gdb.zip"
+                        mime_type = "application/zip"
+
+                    elif export_format == "GeoJSON":
                         geojson_buffer = BytesIO()
                         buildings_gdf.to_file(geojson_buffer, driver="GeoJSON")
                         file_data = geojson_buffer.getvalue()
@@ -312,6 +364,14 @@ def main():
                     mime=mime_type,
                     use_container_width=True
                 )
+
+                if export_format == "Géodatabase fichier ArcGIS Pro (ZIP)":
+                    st.info(
+                        "**ArcGIS Pro :** décompressez le fichier téléchargé, puis dans le "
+                        "Catalogue ajoutez le dossier contenant `*.gdb`. La couche `buildings` "
+                        "est prête à être ajoutée à la carte. Ne renommez pas les fichiers à "
+                        "l'intérieur de la géodatabase."
+                    )
                 
                 # Aperçu
                 with st.expander("👁️ Aperçu des 10 premiers bâtiments"):
