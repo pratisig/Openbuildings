@@ -8,7 +8,6 @@ from pathlib import Path
 import folium
 import geopandas as gpd
 from folium.plugins import Draw
-import pandas as pd
 import requests
 import streamlit as st
 from shapely.geometry import box, shape
@@ -148,19 +147,27 @@ def download_buildings_by_country(iso_code, bbox=None):
         
         start_time = time.time()
         
-        # Lecture du GeoParquet
-        status.write("⏳ Lecture du fichier GeoParquet...")
-        gdf = gpd.read_parquet(parquet_url)
-        
-        download_time = time.time() - start_time
-        status.write(f"✅ {len(gdf):,} bâtiments téléchargés en {download_time:.1f}s")
-        
-        # Filtrage par bbox si fourni
+        # Le filtre bbox est transmis au lecteur GeoParquet : lorsqu'un index
+        # spatial est disponible, seules les parties du fichier utiles sont
+        # téléchargées. C'est essentiel : charger tout un pays peut représenter
+        # plusieurs millions de bâtiments.
         if bbox is not None:
-            status.write("🔍 Filtrage par zone géographique...")
+            status.write("⏳ Lecture optimisée de la zone dans le GeoParquet...")
+            try:
+                gdf = gpd.read_parquet(parquet_url, bbox=bbox.bounds)
+            except (TypeError, ValueError):
+                # Compatibilité avec les anciennes versions de GeoPandas/PyArrow.
+                status.write("⚠️ Index spatial indisponible : lecture complète puis filtrage.")
+                gdf = gpd.read_parquet(parquet_url)
             initial_count = len(gdf)
             gdf = gdf[gdf.intersects(bbox)]
-            status.write(f"📊 {len(gdf):,} bâtiments dans la zone (sur {initial_count:,})")
+            status.write(f"📊 {len(gdf):,} bâtiments dans la zone (sur {initial_count:,} lus)")
+        else:
+            status.write("⏳ Lecture du fichier GeoParquet complet...")
+            gdf = gpd.read_parquet(parquet_url)
+
+        download_time = time.time() - start_time
+        status.write(f"✅ {len(gdf):,} bâtiments chargés en {download_time:.1f}s")
         
         if gdf.empty:
             status.update(label="⚠️ Aucun bâtiment dans la zone", state="warning")
