@@ -1057,3 +1057,80 @@ class TestInterfaceAssets:
         tabs = set(re.findall(r"\{ id: '(\w+)'", app))
         mapped = set(re.findall(r"^  (\w+):", icons[icons.index("TAB_ICONS"):], re.M))
         assert tabs <= mapped, f"onglets sans icone : {sorted(tabs - mapped)}"
+
+
+class TestDocumentation:
+    """Le README doit rester synchronise avec le code.
+
+    Une documentation fausse est pire qu'absente : elle fait perdre du temps.
+    Ces tests echouent des qu'un module, un preset ou un endpoint est ajoute
+    sans mise a jour du README.
+    """
+
+    ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+    @property
+    def readme(self) -> str:
+        return (self.ROOT / "README.md").read_text(encoding="utf-8")
+
+    def test_internal_links_resolve(self):
+        import re
+
+        broken = [
+            link
+            for link in set(re.findall(r"\]\((?!http)([^)#]+)", self.readme))
+            if not (self.ROOT / link).exists()
+        ]
+        assert not broken, f"liens casses dans le README : {broken}"
+
+    def test_documents_every_module(self):
+        from pratisig_api.modules.catalog import MODULES
+
+        readme = self.readme.lower()
+        for module in MODULES:
+            assert module["id"] in readme, f"module {module['id']} absent du README"
+
+    def test_operation_count_is_accurate(self, client):
+        spec = client.get("/openapi.json").json()
+        operations = sum(len(v) for v in spec["paths"].values())
+        assert f"{len(spec['paths'])} chemins" in self.readme
+        assert f"{operations} operations" in self.readme or f"{operations} opérations" in self.readme
+
+    def test_osm_presets_are_listed(self):
+        from pratisig_api.modules.osm import PRESETS
+
+        for preset in PRESETS:
+            assert f"`{preset}`" in self.readme, f"preset {preset} non documente"
+
+    def test_export_formats_are_listed(self):
+        from pratisig_api.modules.exports import FORMATS
+
+        for fmt in FORMATS:
+            assert f"`{fmt}`" in self.readme, f"format {fmt} non documente"
+
+    def test_gee_datasets_are_listed(self):
+        from pratisig_api.services.gee import DATASETS
+
+        for dataset in DATASETS:
+            assert f"`{dataset}`" in self.readme, f"dataset {dataset} non documente"
+
+    def test_land_weights_match_code(self):
+        """Les ponderations annoncees doivent etre celles appliquees."""
+        from pratisig_api.modules.land import WEIGHTS
+
+        for key, weight in WEIGHTS.items():
+            percent = f"{round(weight * 100)} %"
+            assert percent in self.readme, f"ponderation {key} ({percent}) absente"
+
+    def test_documents_credential_guarantees(self):
+        """Les deux garanties de securite doivent rester ecrites."""
+        readme = self.readme
+        assert "Aucun secret ne revient en clair" in readme
+        assert "credentials.json" in readme
+
+    def test_config_prefix_is_documented(self):
+        assert "PRATISIG_" in self.readme
+
+    def test_docs_folder_is_indexed(self):
+        for doc in ("DEPLOIEMENT.md", "API.md", "ARCHITECTURE.md", "MIGRATION.md", "SECURITE.md"):
+            assert doc in self.readme, f"{doc} non reference depuis le README"
