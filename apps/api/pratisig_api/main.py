@@ -25,6 +25,7 @@ from .modules import (
     buildings,
     catalog,
     climate,
+    credentials,
     exports,
     flood,
     geocoding,
@@ -47,6 +48,13 @@ log = logging.getLogger("pratisig")
 async def lifespan(app: FastAPI):
     log.info("Démarrage de %s v%s (%s)", settings.app_name, settings.version, settings.environment)
     settings.ensure_dirs()
+    # Restaure les identifiants enregistres par l'utilisateur via l'interface
+    try:
+        from .modules.credentials import load_persisted
+
+        load_persisted()
+    except Exception as exc:
+        log.warning("Identifiants non restaures : %s", exc)
     if engine.available:
         log.info("DuckDB opérationnel")
     else:
@@ -115,6 +123,7 @@ for module in (
     agriculture,
     land,
     exports,
+    credentials,
     agent,
 ):
     app.include_router(module.router)

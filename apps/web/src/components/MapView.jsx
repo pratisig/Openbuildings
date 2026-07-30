@@ -4,6 +4,21 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 /** Fonds de carte sans clé API (l'ancien front dépendait d'un jeton Mapbox). */
 export const BASEMAPS = {
+  sombre: {
+    label: 'Sombre',
+    style: {
+      version: 8,
+      sources: {
+        base: {
+          type: 'raster',
+          tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'],
+          tileSize: 256,
+          attribution: '© OpenStreetMap, © CARTO',
+        },
+      },
+      layers: [{ id: 'base', type: 'raster', source: 'base' }],
+    },
+  },
   clair: {
     label: 'Clair',
     style: {
@@ -12,21 +27,6 @@ export const BASEMAPS = {
         osm: {
           type: 'raster',
           tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '© OpenStreetMap, © CARTO',
-        },
-      },
-      layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-    },
-  },
-  sombre: {
-    label: 'Sombre',
-    style: {
-      version: 8,
-      sources: {
-        osm: {
-          type: 'raster',
-          tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
           tileSize: 256,
           attribution: '© OpenStreetMap, © CARTO',
         },
@@ -85,7 +85,7 @@ export default function MapView({
     if (map.current) return;
     map.current = new maplibregl.Map({
       container: container.current,
-      style: BASEMAPS[basemap]?.style || BASEMAPS.clair.style,
+      style: BASEMAPS[basemap]?.style || BASEMAPS.sombre.style,
       center: [-14.5, 14.5], // Sénégal
       zoom: 6,
       attributionControl: { compact: true },

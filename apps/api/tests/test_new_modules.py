@@ -911,3 +911,149 @@ class TestBboxPushdown:
         for name in ("overture.py", "buildings.py"):
             src = (root / name).read_text(encoding="utf-8")
             assert "bbox.xmin <= {" not in src, f"{name} : filtre sans borne inferieure"
+
+
+class TestCredentialsModule:
+    """Les identifiants se configurent depuis l'interface, sans editer .env.
+
+    Deux garanties non negociables : aucun secret renvoye en clair, et
+    persistance disque facultative (desactivee par defaut).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _cleanup(self, client):
+        yield
+        client.delete("/api/credentials/llm")
+
+    def test_lists_providers(self, client):
+        data = client.get("/api/credentials").json()
+        ids = {p["id"] for p in data["providers"]}
+        assert {"gee", "llm", "mapbox"} <= ids
+
+    def test_every_provider_documents_signup(self, client):
+        """Chaque service doit expliquer comment obtenir la cle."""
+        for provider in client.get("/api/credentials").json()["providers"]:
+            assert provider["signup_url"].startswith("https://")
+            assert provider["docs_url"].startswith("https://")
+            assert provider["steps"], f"{provider['id']} sans marche a suivre"
+            assert provider["fields"], f"{provider['id']} sans champ"
+
+    def test_env_names_are_never_exposed(self, client):
+        """Les noms de variables d'environnement restent internes."""
+        body = client.get("/api/credentials").text
+        assert "PRATISIG_LLM_API_KEY" not in body
+
+    def test_secret_is_masked(self, client):
+        secret = "sk-proj-TRESSECRET1234567890abcdef"
+        client.post(
+            "/api/credentials/llm",
+            json={"provider": "llm", "values": {
+                "provider": "openai", "model": "gpt-4o-mini", "api_key": secret,
+            }},
+        )
+        body = client.get("/api/credentials").text
+        assert secret not in body, "un secret ne doit jamais revenir en clair"
+        assert "sk-p" in body and "cdef" in body, "le masque doit rester reconnaissable"
+
+    def test_saving_key_unlocks_agent(self, client):
+        assert client.get("/api/agent/tools").json()["llm"]["enabled"] is False
+        client.post(
+            "/api/credentials/llm",
+            json={"provider": "llm", "values": {
+                "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-test-123456789",
+            }},
+        )
+        assert client.get("/api/agent/tools").json()["llm"]["enabled"] is True
+
+    def test_deleting_key_relocks_agent(self, client):
+        client.post(
+            "/api/credentials/llm",
+            json={"provider": "llm", "values": {
+                "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-test-123456789",
+            }},
+        )
+        client.delete("/api/credentials/llm")
+        assert client.get("/api/agent/tools").json()["llm"]["enabled"] is False
+
+    def test_rejects_invalid_gee_json(self, client):
+        response = client.post(
+            "/api/credentials/gee",
+            json={"provider": "gee", "values": {"email": "a@b.com", "key_json": "pas du json"}},
+        )
+        assert response.status_code == 400
+        assert "JSON" in response.json()["detail"]
+
+    def test_rejects_json_that_is_not_a_service_account(self, client):
+        response = client.post(
+            "/api/credentials/gee",
+            json={"provider": "gee", "values": {"email": "a@b.com", "key_json": '{"type": "autre"}'}},
+        )
+        assert response.status_code == 400
+        assert "compte de service" in response.json()["detail"]
+
+    def test_rejects_missing_required_fields(self, client):
+        response = client.post("/api/credentials/llm", json={"provider": "llm", "values": {}})
+        assert response.status_code == 400
+
+    def test_unknown_provider(self, client):
+        assert client.post(
+            "/api/credentials/inconnu", json={"provider": "inconnu", "values": {}}
+        ).status_code == 404
+
+    def test_persistence_is_opt_in(self, client):
+        """Par defaut, rien n'est ecrit sur le disque."""
+        from pratisig_api.modules.credentials import STORE_PATH
+
+        existed = STORE_PATH.exists()
+        client.post(
+            "/api/credentials/llm",
+            json={"provider": "llm", "values": {
+                "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-ephemere-123",
+            }},
+        )
+        assert STORE_PATH.exists() == existed, "aucune ecriture sans persist=true"
+
+
+class TestInterfaceAssets:
+    """Verifications statiques de l'interface."""
+
+    WEB = pathlib.Path(__file__).resolve().parents[3] / "apps" / "web" / "src"
+
+    def test_css_variables_are_all_defined(self):
+        import re
+
+        css = (self.WEB / "styles" / "app.css").read_text(encoding="utf-8")
+        used = set(re.findall(r"var\((--[\w-]+)", css))
+        defined = set(re.findall(r"^\s*(--[\w-]+)\s*:", css, re.M))
+        assert not (used - defined), f"variables non definies : {sorted(used - defined)}"
+
+    def test_light_theme_overrides_core_tokens(self):
+        import re
+
+        css = (self.WEB / "styles" / "app.css").read_text(encoding="utf-8")
+        block = css[css.index("[data-theme='light']"):css.index("* { box-sizing")]
+        overridden = set(re.findall(r"(--[\w-]+)\s*:", block))
+        for token in ("--bg", "--surface", "--border", "--text", "--accent"):
+            assert token in overridden, f"{token} non surcharge en theme clair"
+
+    def test_no_emoji_in_navigation(self):
+        """Les icones sont des SVG : les emoji rendaient l'interface illisible."""
+        app = (self.WEB / "App.jsx").read_text(encoding="utf-8")
+        assert "TAB_ICONS" in app
+        for emoji in ("📥", "📐", "🌾", "🏠", "🛰️", "💬", "ℹ️", "⬢", "◈"):
+            assert emoji not in app, f"emoji {emoji} encore present dans la navigation"
+
+    def test_icons_inherit_current_color(self):
+        """Les icones doivent suivre le theme, donc utiliser currentColor."""
+        icons = (self.WEB / "components" / "Icons.jsx").read_text(encoding="utf-8")
+        assert "currentColor" in icons
+        assert "TAB_ICONS" in icons
+
+    def test_every_tab_has_an_icon(self):
+        import re
+
+        app = (self.WEB / "App.jsx").read_text(encoding="utf-8")
+        icons = (self.WEB / "components" / "Icons.jsx").read_text(encoding="utf-8")
+        tabs = set(re.findall(r"\{ id: '(\w+)'", app))
+        mapped = set(re.findall(r"^  (\w+):", icons[icons.index("TAB_ICONS"):], re.M))
+        assert tabs <= mapped, f"onglets sans icone : {sorted(tabs - mapped)}"

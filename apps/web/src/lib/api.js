@@ -140,6 +140,12 @@ export const api = {
   climateParameters: () => request('/api/climate/parameters'),
   climate: (body) => request('/api/climate/timeseries', { method: 'POST', body }),
 
+  // Identifiants des services externes
+  credentials: () => request('/api/credentials'),
+  saveCredentials: (provider, body) => request(`/api/credentials/${provider}`, { method: 'POST', body }),
+  testCredentials: (provider) => request(`/api/credentials/${provider}/test`, { method: 'POST' }),
+  deleteCredentials: (provider) => request(`/api/credentials/${provider}`, { method: 'DELETE' }),
+
   // Agriculture
   agricultureCrops: () => request('/api/agriculture/crops'),
   agricultureZones: () => request('/api/agriculture/zones'),

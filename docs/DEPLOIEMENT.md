@@ -272,6 +272,33 @@ vue.
 
 ---
 
+## Activer les modules optionnels
+
+Trois services demandent un compte externe. **Aucun n'est nécessaire** : la
+plateforme fonctionne sans, les modules concernés restent simplement inactifs.
+
+Ouvrez l'onglet **Comptes** (icône clé, en bas du rail de navigation). Chaque
+service y expose sa procédure d'inscription, ses champs et un bouton de test.
+
+| Service | Débloque | Coût |
+|---|---|---|
+| Google Earth Engine | Imagerie satellite, détection d'inondations | Gratuit (recherche, usage non commercial) |
+| Fournisseur LLM | Assistant cartographique | Facturé à l'usage |
+| Mapbox | Fonds de carte supplémentaires | Palier gratuit — facultatif |
+
+Deux garanties :
+
+- **Les secrets ne reviennent jamais en clair.** L'interface n'affiche qu'un
+  masque du type `sk-p…cdef`.
+- **La persistance est facultative.** Par défaut les clés vivent en mémoire et
+  disparaissent à l'arrêt du serveur. La case « Conserver après redémarrage »
+  les écrit en clair dans `data/credentials.json`, exclu du dépôt Git — à
+  éviter sur un poste partagé.
+
+Les variables d'environnement (`PRATISIG_GEE_*`, `PRATISIG_LLM_*`) restent
+utilisables et prennent effet au démarrage ; c'est la méthode à privilégier
+pour un déploiement serveur.
+
 ## 4. Déploiement — API sur Render
 
 1. Sur [render.com](https://render.com) : **New → Blueprint**
