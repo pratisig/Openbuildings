@@ -345,7 +345,15 @@ def main():
     if aoi_method == "Dessiner sur la carte":
         st.caption("Utilisez les outils polygon ou rectangle situés en haut à gauche de la carte.")
         map_view = folium.Map(location=[14.72, -17.47], zoom_start=11, tiles="OpenStreetMap")
-        Draw(export=False, draw={"polyline": False, "marker": False, "circle": False, "circlemarker": False}).add_to(map_view)
+        Draw(
+            export=False,
+            draw_options={
+                "polyline": False,
+                "marker": False,
+                "circle": False,
+                "circlemarker": False,
+            },
+        ).add_to(map_view)
         map_state = st_folium(map_view, height=430, use_container_width=True, key="aoi_map")
         drawings = map_state.get("all_drawings") or []
         if drawings:
