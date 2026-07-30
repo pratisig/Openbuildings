@@ -107,14 +107,28 @@ BUILDINGS_COLUMNS = (
 )
 
 
+def _bbox_clause(bbox: BBox, margin_deg: float = 0.05) -> str:
+    """Filtre spatial permettant l'elagage des row-groups par DuckDB.
+
+    Encadrer chaque colonne des deux cotes est indispensable : sans borne
+    inferieure, `bbox.xmin <= xmax` laisse passer tous les row-groups situes
+    a l'ouest de la zone et DuckDB telecharge le pays entier.
+
+    La marge est plus faible que pour Overture : les empreintes de batiments
+    depassent rarement quelques dizaines de metres.
+    """
+    return (
+        f"bbox.xmin BETWEEN {bbox.xmin - margin_deg} AND {bbox.xmax} "
+        f"AND bbox.ymin BETWEEN {bbox.ymin - margin_deg} AND {bbox.ymax} "
+        f"AND bbox.xmax >= {bbox.xmin} AND bbox.ymax >= {bbox.ymin}"
+    )
+
+
 def _build_sql(iso3: str, bbox: BBox | None, min_confidence: float, min_area: float, limit: int) -> str:
     where: list[str] = []
     if bbox is not None:
         # Pushdown : DuckDB n'ouvre que les row-groups intersectant la bbox.
-        where.append(
-            f"bbox.xmin <= {bbox.xmax} AND bbox.xmax >= {bbox.xmin} "
-            f"AND bbox.ymin <= {bbox.ymax} AND bbox.ymax >= {bbox.ymin}"
-        )
+        where.append(_bbox_clause(bbox))
     if min_confidence > 0:
         where.append(f"confidence >= {min_confidence}")
     if min_area > 0:
@@ -243,10 +257,7 @@ def buildings_stats(payload: BuildingsStatsQuery) -> dict[str, Any]:
             bbox = payload.area.resolve_bbox()
         except Exception as exc:
             raise HTTPException(400, f"Zone invalide : {exc}") from exc
-        where.append(
-            f"bbox.xmin <= {bbox.xmax} AND bbox.xmax >= {bbox.xmin} "
-            f"AND bbox.ymin <= {bbox.ymax} AND bbox.ymax >= {bbox.ymin}"
-        )
+        where.append(_bbox_clause(bbox))
     if payload.min_confidence > 0:
         where.append(f"confidence >= {payload.min_confidence}")
     clause = f"WHERE {' AND '.join(where)}" if where else ""

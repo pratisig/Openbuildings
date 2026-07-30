@@ -118,10 +118,24 @@ def _source_path(theme: str) -> str:
     return f"{settings.overture_release_path}/theme={theme}/type={ptype}/*"
 
 
-def _bbox_clause(bbox: BBox) -> str:
+def _bbox_clause(bbox: BBox, margin_deg: float = 0.5) -> str:
+    """Filtre spatial permettant l'elagage des row-groups par DuckDB.
+
+    Le motif « bbox.xmin <= xmax AND bbox.xmax >= xmin » est exact au sens
+    de l'intersection, mais il laisse `bbox.xmin` sans borne inferieure :
+    DuckDB ne peut alors ecarter aucun row-group a partir de ses statistiques
+    min/max, et telecharge des giga-octets depuis S3 (delai depasse observe
+    a 45 s sur une simple requete Dakar).
+
+    On encadre donc chaque colonne des deux cotes, comme le fait la
+    documentation Overture. La marge conserve les entites dont le coin
+    inferieur gauche tombe hors de la zone alors que l'entite l'intersecte
+    (grands polygones : batiments etendus, divisions administratives).
+    """
     return (
-        f"bbox.xmin <= {bbox.xmax} AND bbox.xmax >= {bbox.xmin} "
-        f"AND bbox.ymin <= {bbox.ymax} AND bbox.ymax >= {bbox.ymin}"
+        f"bbox.xmin BETWEEN {bbox.xmin - margin_deg} AND {bbox.xmax} "
+        f"AND bbox.ymin BETWEEN {bbox.ymin - margin_deg} AND {bbox.ymax} "
+        f"AND bbox.xmax >= {bbox.xmin} AND bbox.ymax >= {bbox.ymin}"
     )
 
 

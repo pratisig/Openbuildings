@@ -867,3 +867,47 @@ class TestOvertureAccess:
 
         info = status()
         assert "release" in info and "source" in info and "access" in info
+
+
+class TestBboxPushdown:
+    """Les filtres spatiaux doivent permettre a DuckDB d'elaguer les fichiers.
+
+    Regression : « bbox.xmin <= xmax AND bbox.xmax >= xmin » est exact au
+    sens de l'intersection, mais laisse bbox.xmin sans borne inferieure.
+    DuckDB ne peut alors ecarter aucun row-group a partir de ses statistiques
+    et telecharge des giga-octets -- delai depasse a 45 s sur une requete
+    Overture pourtant limitee a Dakar.
+    """
+
+    def test_overture_clause_bounds_both_sides(self):
+        from pratisig_api.core.geo import BBox
+        from pratisig_api.modules.overture import _bbox_clause
+
+        clause = _bbox_clause(BBox(-17.5, 14.6, -17.4, 14.7))
+        assert "bbox.xmin BETWEEN" in clause
+        assert "bbox.ymin BETWEEN" in clause
+
+    def test_buildings_clause_bounds_both_sides(self):
+        from pratisig_api.core.geo import BBox
+        from pratisig_api.modules.buildings import _bbox_clause
+
+        clause = _bbox_clause(BBox(-17.5, 14.6, -17.4, 14.7))
+        assert "bbox.xmin BETWEEN" in clause
+        assert "bbox.ymin BETWEEN" in clause
+
+    def test_clause_keeps_edge_features(self):
+        """La marge conserve les entites a cheval sur la bordure."""
+        from pratisig_api.core.geo import BBox
+        from pratisig_api.modules.overture import _bbox_clause
+
+        bbox = BBox(-17.5, 14.6, -17.4, 14.7)
+        clause = _bbox_clause(bbox, margin_deg=0.5)
+        assert "-18.0" in clause, "la borne inferieure doit inclure la marge"
+        assert "bbox.xmax >= -17.5" in clause
+
+    def test_no_unbounded_comparison_remains(self):
+        """Aucun module ne doit reintroduire un filtre sans borne inferieure."""
+        root = pathlib.Path(__file__).resolve().parents[1] / "pratisig_api" / "modules"
+        for name in ("overture.py", "buildings.py"):
+            src = (root / name).read_text(encoding="utf-8")
+            assert "bbox.xmin <= {" not in src, f"{name} : filtre sans borne inferieure"

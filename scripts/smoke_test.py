@@ -185,14 +185,17 @@ def main() -> int:
          {"latitude": 14.69, "longitude": -17.44, "start": "2024-06-01", "end": "2024-08-31"}, "dates"),
         ("Bâtiments (source.coop)", "POST", "/api/buildings/query",
          {"country_iso3": "SEN", "area": dakar, "limit": 200}, "features"),
+        # Overture : premier acces plus lent (ouverture des metadonnees S3)
         ("Overture Maps (S3)", "POST", "/api/overture/query",
-         {"theme": "places", "area": dakar, "limit": 50}, "features"),
+         {"theme": "places", "area": dakar, "limit": 50}, "features", 90),
         ("Foncier (multi-sources)", "POST", "/api/land/analyze",
          {"latitude": 14.75, "longitude": -17.30, "include_services": False}, "score"),
     ]
 
-    for label, method, path, payload, key in checks:
-        status, body, ms = call(url, path, payload if method == "POST" else None)
+    for check in checks:
+        label, method, path, payload, key = check[:5]
+        timeout = check[5] if len(check) > 5 else 45
+        status, body, ms = call(url, path, payload if method == "POST" else None, timeout=timeout)
         if status == 200:
             value = body.get(key)
             count = len(value) if isinstance(value, (list, dict)) else 1
