@@ -24,10 +24,20 @@ Ouvrez ensuite l'adresse affichée par Streamlit, généralement `http://localho
 1. Dans **Source des bâtiments**, choisissez **VIDA Google–Microsoft**.
 2. Sélectionnez un pays.
 3. Dessinez une petite zone, importez un GeoJSON/GPKG/Shapefile ZIP, ou saisissez une BBOX.
-4. Choisissez **Géodatabase fichier ArcGIS Pro (ZIP)** puis téléchargez.
-5. Décompressez l'archive et ajoutez le dossier `.gdb` dans le catalogue ArcGIS Pro. La couche s'appelle `buildings`.
+4. Cochez **Exporter les centroïdes (points)** si vous voulez un point par bâtiment plutôt que les polygones.
+5. Choisissez **Géodatabase fichier ArcGIS Pro (ZIP)** puis téléchargez.
+6. Décompressez l'archive et ajoutez le dossier `.gdb` dans le catalogue ArcGIS Pro. La couche s'appelle `buildings`.
 
 Le filtre spatial est transmis au lecteur GeoParquet avant le téléchargement. L'application ne doit donc pas charger l'intégralité du pays lorsque la source publie un index spatial. Pour de bons temps de réponse, limitez l'extraction à une ville, un quartier ou une emprise de projet.
+
+## Autres sources et qualité
+
+- **OpenStreetMap (Overpass)** est disponible dans l'application. Il extrait les objets portant le tag `building=*` pour l'emprise sélectionnée. Choisissez une zone modeste : le service public Overpass peut refuser les requêtes trop vastes ou être temporairement chargé.
+- **VIDA Google–Microsoft** et **Google Open Buildings v3** sont des empreintes produites par IA. Elles sont très utiles pour l'analyse à grande échelle, mais leur position, leur forme et leur complétude varient selon la qualité de l'imagerie. Le champ `confidence` de Google permet un filtrage, sans garantir l'exactitude.
+- **OSM** peut être plus exact là où des contributeurs ont numérisé les bâtiments, mais peut aussi être incomplet dans les zones peu cartographiées.
+- Les données **Meta/Facebook HRSL** ouvertes sont des grilles de population/implantation, et non une couche mondiale d'empreintes de bâtiments comparable aux trois sources ci-dessus. Elles ne sont donc pas proposées comme « bâtiments » afin d'éviter une interprétation erronée.
+
+Aucune de ces sources ne remplace le cadastre ou une donnée topographique validée.
 
 ## Source Google Earth Engine
 

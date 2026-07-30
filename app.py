@@ -88,6 +88,42 @@ def read_aoi_upload(uploaded_file):
     return gdf.to_crs("EPSG:4326").geometry.union_all()
 
 
+def download_osm_buildings(aoi):
+    """Télécharge les bâtiments OSM via Overpass pour une emprise modeste."""
+    west, south, east, north = aoi.bounds
+    query = f"""[out:json][timeout:120];
+    (way[\"building\"]({south},{west},{north},{east});
+     relation[\"building\"]({south},{west},{north},{east}););
+    out geom;"""
+    try:
+        response = requests.post(
+            "https://overpass-api.de/api/interpreter", data={"data": query}, timeout=180
+        )
+        response.raise_for_status()
+        features = []
+        for element in response.json().get("elements", []):
+            coordinates = [(point["lon"], point["lat"]) for point in element.get("geometry", [])]
+            if len(coordinates) < 4:
+                continue
+            if coordinates[0] != coordinates[-1]:
+                coordinates.append(coordinates[0])
+            try:
+                geometry = shape({"type": "Polygon", "coordinates": [coordinates]})
+                if not geometry.is_valid or geometry.is_empty:
+                    continue
+                properties = dict(element.get("tags", {}))
+                properties.update({"osm_type": element["type"], "osm_id": element["id"], "source": "OpenStreetMap"})
+                features.append({"type": "Feature", "geometry": geometry.__geo_interface__, "properties": properties})
+            except Exception:
+                continue
+        result = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+        return result[result.intersects(aoi)]
+    except Exception as exc:
+        raise RuntimeError(
+            "La requête Overpass/OSM a échoué. Attendez quelques instants ou réduisez la zone d'intérêt."
+        ) from exc
+
+
 def download_google_earth_engine_buildings(aoi, min_confidence, project_id=""):
     """Extrait Open Buildings v3 via Earth Engine pour une petite zone d'intérêt."""
     try:
@@ -278,8 +314,12 @@ def main():
 
         data_source = st.radio(
             "Source des bâtiments",
-            ["VIDA Google–Microsoft", "Google Open Buildings v3 (Earth Engine)"],
-            help="VIDA est la source ouverte actuelle. Earth Engine donne accès à la collection Google v3 et à son champ confidence."
+            [
+                "VIDA Google–Microsoft",
+                "Google Open Buildings v3 (Earth Engine)",
+                "OpenStreetMap (Overpass)",
+            ],
+            help="VIDA est la source ouverte actuelle. Earth Engine donne accès à Google v3 ; OSM est une cartographie collaborative."
         )
         ee_project_id = ""
         min_confidence = None
@@ -314,14 +354,23 @@ def main():
                 value=0.00001,
                 format="%.5f"
             )
+
+        export_centroids = st.checkbox(
+            "Exporter les centroïdes (points)",
+            value=False,
+            help="Transforme chaque empreinte de bâtiment en un point central tout en conservant ses attributs."
+        )
         
         st.markdown("---")
-        st.markdown("### 💡 Info Dataset")
+        st.markdown("### ℹ️ Sources et précision")
         st.markdown("""
-        - **Total** : 2.5+ milliards de bâtiments
-        - **Sources** : Google + Microsoft
-        - **Couverture** : 185 pays
-        - **Régions** : Afrique, Asie du Sud/Sud-Est, Amérique Latine
+| Source | Nature / précision indicative | À savoir |
+|---|---|---|
+| **VIDA Google–Microsoft** | Empreintes IA ; qualité variable selon lieu et imagerie | Bonne couverture dans de nombreux pays du Sud global ; vérifier sur imagerie locale. |
+| **Google Open Buildings v3** | Empreintes IA avec attribut `confidence` | Un seuil plus élevé réduit les faux positifs, mais peut omettre des bâtiments. |
+| **OpenStreetMap** | Bâtiments numérisés par des contributeurs | Très précis dans les zones activement cartographiées, mais couverture et complétude hétérogènes. |
+
+Aucune de ces sources ne constitue une donnée cadastrale : contrôlez toujours les résultats avant une décision technique, foncière ou réglementaire.
         """)
         
         st.markdown("---")
@@ -399,10 +448,12 @@ def main():
             # intersectent la géométrie ; Earth Engine applique le filtre côté serveur.
             if data_source == "VIDA Google–Microsoft":
                 buildings_gdf = download_buildings_by_country(iso_code, aoi_geom)
-            else:
+            elif data_source == "Google Open Buildings v3 (Earth Engine)":
                 buildings_gdf = download_google_earth_engine_buildings(
                     aoi_geom, min_confidence, ee_project_id
                 )
+            else:
+                buildings_gdf = download_osm_buildings(aoi_geom)
             
             # Résultats
             if buildings_gdf is None or buildings_gdf.empty:
@@ -419,6 +470,13 @@ def main():
                 if simplify_geom and len(buildings_gdf) > 1000:
                     with st.spinner("🔧 Simplification des géométries..."):
                         buildings_gdf['geometry'] = buildings_gdf['geometry'].simplify(tolerance=tolerance)
+
+                if export_centroids:
+                    # Les données sont en WGS 84 : le centroïde est utilisé comme
+                    # point de représentation, non comme mesure de surface.
+                    buildings_gdf = buildings_gdf.copy()
+                    buildings_gdf["geometry"] = buildings_gdf.geometry.centroid
+                    st.info("📍 Export configuré en centroïdes : géométrie de type point.")
                 
                 st.success(f"🎉 **{len(buildings_gdf):,} bâtiments** extraits avec succès !")
                 
