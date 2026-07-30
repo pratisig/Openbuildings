@@ -9,7 +9,9 @@
 services:
   api:
     build:
-      context: ./apps/api
+      # Contexte a la racine : le Dockerfile copie aussi data/reference/.
+      context: .
+      dockerfile: apps/api/Dockerfile
       args:
         INSTALL_EXTRAS: ${INSTALL_EXTRAS:-full}
     container_name: pratisig-api
@@ -28,8 +30,12 @@ services:
       PRATISIG_LLM_PROVIDER: ${PRATISIG_LLM_PROVIDER:-openai}
       PRATISIG_LLM_MODEL: ${PRATISIG_LLM_MODEL:-gpt-4o-mini}
       PRATISIG_LLM_API_KEY: ${PRATISIG_LLM_API_KEY:-}
+      # En dev (compose), le cache vit dans ./data/cache sur l'hote et
+      # survit aux redemarrages. En prod (Render), l'image force /tmp.
+      PRATISIG_CACHE_DIR: ${PRATISIG_CACHE_DIR:-/app/data/cache}
     volumes:
-      - ./data:/data
+      # L'image lit PRATISIG_DATA_DIR=/app/data : monter ./data au meme endroit.
+      - ./data:/app/data
       - ./secrets:/secrets:ro
     ports:
       - "${API_PORT:-8000}:8000"

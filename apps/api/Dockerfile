@@ -7,7 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt requirements-full.txt ./
+# Le contexte de build est la racine du depot : tous les COPY partent de la.
+COPY apps/api/requirements.txt apps/api/requirements-full.txt ./
 ARG INSTALL_EXTRAS=full
 RUN if [ "$INSTALL_EXTRAS" = "full" ]; then \
       pip install --no-cache-dir -r requirements-full.txt; \
@@ -15,11 +16,14 @@ RUN if [ "$INSTALL_EXTRAS" = "full" ]; then \
       pip install --no-cache-dir -r requirements.txt; \
     fi
 
-COPY pratisig_api ./pratisig_api
+COPY apps/api/pratisig_api ./pratisig_api
+# Donnees de reference (liste des pays pour /api/buildings/countries) :
+# sans cette ligne, l'endpoint renvoyait une liste vide sans erreur.
+COPY data/reference ./data/reference
 
 ENV PYTHONUNBUFFERED=1 \
-    PRATISIG_DATA_DIR=/data \
-    PRATISIG_CACHE_DIR=/data/cache
+    PRATISIG_DATA_DIR=/app/data \
+    PRATISIG_CACHE_DIR=/tmp/pratisig-cache
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

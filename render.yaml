@@ -8,7 +8,8 @@ services:
     name: pratisig-api
     runtime: docker
     dockerfilePath: ./apps/api/Dockerfile
-    dockerContext: ./apps/api
+    # Contexte a la racine : l'image doit embarquer data/reference/
+    dockerContext: .
     plan: free
     region: frankfurt          # le plus proche de Dakar
     healthCheckPath: /health
@@ -28,6 +29,11 @@ services:
       - key: PRATISIG_DUCKDB_THREADS
         value: "2"
 
+      # Le plan gratuit n'a pas de disque persistant : cache ephemere
+      # dans /tmp (reconstruit a chaque deploiement, rien a configurer).
+      - key: PRATISIG_CACHE_DIR
+        value: /tmp/pratisig-cache
+
       # ── CORS : autoriser le front ───────────────────────────────
       # Remplacer par l'URL de production une fois le front déployé.
       - key: PRATISIG_CORS_ORIGINS
@@ -46,9 +52,5 @@ services:
       - key: PRATISIG_LLM_API_KEY
         sync: false
 
-    # Le cache disque survit aux redémarrages (le plan gratuit n'a pas de
-    # disque persistant : le cache est alors simplement reconstruit).
-    disk:
-      name: pratisig-cache
-      mountPath: /data
-      sizeGB: 1
+# Pas de bloc `disk:` : « disks are not supported for free tier services »
+# fait echouer le deploiement avant meme la construction de l'image.
