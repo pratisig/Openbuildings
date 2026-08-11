@@ -10,6 +10,7 @@ import ThematicPanel from './modules/ThematicPanel';
 import AgriculturePanel from './modules/AgriculturePanel';
 import LandPanel from './modules/LandPanel';
 import AgentPanel from './modules/AgentPanel';
+import ConverterPanel from './modules/ConverterPanel';
 import CredentialsPanel from './modules/CredentialsPanel';
 import { TAB_ICONS, IconMenu, IconMoon, IconSearch, IconSun } from './components/Icons';
 import { createLayer } from './lib/layers';
@@ -37,6 +38,7 @@ const GROUPS = [
   {
     label: 'Outils',
     tabs: [
+      { id: 'converter', label: 'Convertir', title: 'Convertir des fichiers SIG et créer des bounding boxes' },
       { id: 'agent', label: 'Assistant', title: 'Piloter la carte en langage naturel' },
     ],
   },
@@ -54,6 +56,7 @@ const PANEL_META = {
   thematic: ['Satellite', 'Imagerie, inondations et séries climatiques'],
   agriculture: ['Agriculture', 'Suivi de campagne et aptitude culturale'],
   land: ['Foncier', 'Évaluation multicritère d’une parcelle'],
+  converter: ['Convertisseur', 'Fichiers géographiques et création de BBox'],
   agent: ['Assistant', 'Dialoguez avec la carte en français'],
   credentials: ['Comptes & clés', 'Services externes optionnels'],
   about: ['Guide', 'Modules, origines et état des services'],
@@ -73,6 +76,7 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [selectedArea, setSelectedArea] = useState(null);
+  const [mapToolRequest, setMapToolRequest] = useState(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -277,6 +281,19 @@ export default function App() {
           )}
           {tab === 'agriculture' && <AgriculturePanel map={map} point={selectedPoint} notify={notify} />}
           {tab === 'land' && <LandPanel map={map} point={selectedPoint} onLayer={addLayer} notify={notify} />}
+          {tab === 'converter' && (
+            <ConverterPanel
+              map={map}
+              area={selectedArea}
+              onAreaChange={(bbox) => { setSelectedArea(bbox); setSelectedPoint(null); }}
+              onDrawArea={() => {
+                setMapToolRequest({ mode: 'area', key: Date.now() });
+                if (window.innerWidth <= 900) setPanelOpen(false);
+              }}
+              onLayer={addLayer}
+              notify={notify}
+            />
+          )}
           {tab === 'agent' && <AgentPanel map={map} layers={layers} onLayer={addLayer} notify={notify} />}
           {tab === 'credentials' && <CredentialsPanel notify={notify} onChange={loadHealth} />}
           {tab === 'about' && <AboutPanel />}
@@ -286,6 +303,7 @@ export default function App() {
           <MapView
             layers={layers}
             rasterTiles={rasterTiles}
+            selectedArea={selectedArea}
             basemap={basemap}
             onMapReady={setMap}
             onFeatureClick={(feature, layer) => setSelected({ feature, layer })}
@@ -294,8 +312,13 @@ export default function App() {
           <MapTools
             map={map}
             notify={notify}
+            request={mapToolRequest}
             onPoint={(p) => { setSelectedPoint(p); setSelectedArea(null); }}
-            onArea={(bbox) => { setSelectedArea(bbox); setSelectedPoint(null); }}
+            onArea={(bbox) => {
+              setSelectedArea(bbox);
+              setSelectedPoint(null);
+              if (tab === 'converter') setPanelOpen(true);
+            }}
           />
 
           {(selectedPoint || selectedArea) && (

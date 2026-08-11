@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 def find_repo_root(start: Path) -> Path:
     """Racine du depot : dans le repo (parents[3]) ou dans l'image Docker
     (/app), detectee en remontant jusqu'au dossier data/reference.
@@ -129,6 +130,7 @@ class Settings(BaseSettings):
 
     # ── Sécurité / quotas ──────────────────────────────────────────
     max_export_features: int = 500_000
+    max_import_bytes: int = 25 * 1024 * 1024  # 25 Mo par fichier
 
     @property
     def overture_release(self) -> str:

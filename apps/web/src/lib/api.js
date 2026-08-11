@@ -47,6 +47,23 @@ async function request(path, { method = 'GET', body, params, signal } = {}) {
   return response.json();
 }
 
+async function upload(path, file, inputFormat) {
+  const form = new FormData();
+  form.append('file', file);
+  if (inputFormat) form.append('input_format', inputFormat);
+  const response = await fetch(`${BASE}${path}`, { method: 'POST', body: form });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      detail = (await response.json()).detail || detail;
+    } catch {
+      /* réponse non JSON */
+    }
+    throw new ApiError(detail, response.status, detail);
+  }
+  return response.json();
+}
+
 async function download(path, body, fallbackName) {
   const response = await fetch(`${BASE}${path}`, {
     method: 'POST',
@@ -158,7 +175,9 @@ export const api = {
   landAnalyze: (body) => request('/api/land/analyze', { method: 'POST', body }),
   landCompare: (body) => request('/api/land/compare', { method: 'POST', body }),
 
-  // Exports
+  // Conversion et exports
+  converterFormats: () => request('/api/converter/formats'),
+  importDataset: (file, inputFormat) => upload('/api/converter/import', file, inputFormat),
   exportFormats: () => request('/api/exports/formats'),
   exportLayer: (format, data, filename) =>
     download('/api/exports/create', { format, data, filename }, `${filename}.${format}`),

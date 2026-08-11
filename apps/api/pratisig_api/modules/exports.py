@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,20 @@ FORMATS: dict[str, dict[str, Any]] = {
         "media_type": "text/csv",
         "requires_geopandas": False,
         "description": "Tableur, géométrie en colonne WKT.",
+    },
+    "wkt": {
+        "label": "WKT",
+        "extension": "wkt",
+        "media_type": "text/plain",
+        "requires_geopandas": False,
+        "description": "Une géométrie Well-Known Text par ligne.",
+    },
+    "kml": {
+        "label": "KML",
+        "extension": "kml",
+        "media_type": "application/vnd.google-earth.kml+xml",
+        "requires_geopandas": False,
+        "description": "Compatible Google Earth et de nombreux logiciels SIG.",
     },
     "gpkg": {
         "label": "GeoPackage",
@@ -171,6 +186,70 @@ def _to_geojsonl(features: list[dict[str, Any]]) -> bytes:
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def _to_wkt(features: list[dict[str, Any]]) -> bytes:
+    lines = (_geometry_to_wkt(feature.get("geometry")) for feature in features)
+    return ("\n".join(line for line in lines if line) + "\n").encode("utf-8")
+
+
+def _kml_geometry(parent: ET.Element, geometry: dict[str, Any]) -> None:
+    """Ajoute une géométrie GeoJSON à un Placemark KML."""
+    geometry_type = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+
+    def coordinates_text(values: list[list[float]]) -> str:
+        return " ".join(f"{point[0]},{point[1]}" for point in values)
+
+    if geometry_type == "Point":
+        node = ET.SubElement(parent, "Point")
+        ET.SubElement(node, "coordinates").text = f"{coordinates[0]},{coordinates[1]}"
+    elif geometry_type == "LineString":
+        node = ET.SubElement(parent, "LineString")
+        ET.SubElement(node, "coordinates").text = coordinates_text(coordinates)
+    elif geometry_type == "Polygon":
+        node = ET.SubElement(parent, "Polygon")
+        for index, ring in enumerate(coordinates):
+            boundary = ET.SubElement(node, "outerBoundaryIs" if index == 0 else "innerBoundaryIs")
+            linear_ring = ET.SubElement(boundary, "LinearRing")
+            ET.SubElement(linear_ring, "coordinates").text = coordinates_text(ring)
+    elif geometry_type in {"MultiPoint", "MultiLineString", "MultiPolygon"}:
+        multi = ET.SubElement(parent, "MultiGeometry")
+        child_type = geometry_type.removeprefix("Multi")
+        for child_coordinates in coordinates:
+            _kml_geometry(multi, {"type": child_type, "coordinates": child_coordinates})
+    elif geometry_type == "GeometryCollection":
+        multi = ET.SubElement(parent, "MultiGeometry")
+        for child in geometry.get("geometries") or []:
+            _kml_geometry(multi, child)
+
+
+def _to_kml(features: list[dict[str, Any]], name: str) -> bytes:
+    namespace = "http://www.opengis.net/kml/2.2"
+    ET.register_namespace("", namespace)
+    root = ET.Element(f"{{{namespace}}}kml")
+    document = ET.SubElement(root, "Document")
+    ET.SubElement(document, "name").text = name
+
+    for index, feature in enumerate(features, 1):
+        geometry = feature.get("geometry")
+        if not geometry:
+            continue
+        placemark = ET.SubElement(document, "Placemark")
+        properties = feature.get("properties") or {}
+        ET.SubElement(placemark, "name").text = str(properties.get("name") or f"Entité {index}")
+        if properties:
+            extended = ET.SubElement(placemark, "ExtendedData")
+            for key, value in properties.items():
+                data = ET.SubElement(extended, "Data", name=str(key))
+                ET.SubElement(data, "value").text = (
+                    json.dumps(value, ensure_ascii=False, default=str)
+                    if isinstance(value, (dict, list))
+                    else str(value if value is not None else "")
+                )
+        _kml_geometry(placemark, geometry)
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
 def _to_geopandas(features: list[dict[str, Any]], fmt: str, name: str) -> bytes:
     if not GEOPANDAS:
         raise HTTPException(
@@ -244,6 +323,10 @@ def create(payload: ExportRequest) -> Response:
         content = _to_geojsonl(features)
     elif fmt == "csv":
         content = _to_csv(features)
+    elif fmt == "wkt":
+        content = _to_wkt(features)
+    elif fmt == "kml":
+        content = _to_kml(features, layer)
     else:
         content = _to_geopandas(features, fmt, layer)
 

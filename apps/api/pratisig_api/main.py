@@ -25,6 +25,7 @@ from .modules import (
     buildings,
     catalog,
     climate,
+    converter,
     credentials,
     exports,
     flood,
@@ -73,7 +74,7 @@ app = FastAPI(
         "Rassemble en un seul service les projets auparavant dispersés : "
         "Open Buildings, Overture Maps, OpenStreetMap, découpage administratif, "
         "géocodage, itinéraires, analyse spatiale, imagerie satellite, "
-        "inondations, climat, exports et agent cartographique.\n\n"
+            "inondations, climat, conversion de fichiers, exports et agent cartographique.\n\n"
         "Voir `/api/catalog` pour la liste des modules et "
         "`/api/catalog/migration` pour la traçabilité des dépôts d'origine."
     ),
@@ -122,6 +123,7 @@ for module in (
     climate,
     agriculture,
     land,
+    converter,
     exports,
     credentials,
     agent,

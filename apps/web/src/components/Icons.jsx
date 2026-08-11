@@ -77,6 +77,16 @@ export const IconAssistant = (p) => (
   </svg>
 );
 
+export const IconConvert = (p) => (
+  <svg {...base} {...p}>
+    <path d="M7 7h11l-3-3" />
+    <path d="m18 7-3 3" />
+    <path d="M17 17H6l3 3" />
+    <path d="m6 17 3-3" />
+    <path d="M4 4v6M20 14v6" />
+  </svg>
+);
+
 export const IconKey = (p) => (
   <svg {...base} {...p}>
     <circle cx="7.5" cy="15.5" r="4" />
@@ -149,6 +159,7 @@ export const TAB_ICONS = {
   agriculture: IconAgriculture,
   land: IconLand,
   agent: IconAssistant,
+  converter: IconConvert,
   credentials: IconKey,
   about: IconGuide,
 };

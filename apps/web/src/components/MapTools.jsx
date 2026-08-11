@@ -7,10 +7,14 @@ import { useEffect, useRef, useState } from 'react';
  * ne permette de les désigner : l'utilisateur devait deviner que la plateforme
  * utilisait le centre ou l'emprise visible. Ces outils rendent l'action explicite.
  */
-export default function MapTools({ map, onPoint, onArea, notify }) {
+export default function MapTools({ map, onPoint, onArea, notify, request }) {
   const [mode, setMode] = useState(null); // null | 'point' | 'area'
   const start = useRef(null);
   const box = useRef(null);
+
+  useEffect(() => {
+    if (request?.mode) setMode(request.mode);
+  }, [request]);
 
   useEffect(() => {
     if (!map) return;

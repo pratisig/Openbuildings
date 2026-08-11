@@ -210,12 +210,27 @@ MODULES: list[dict[str, Any]] = [
         "status": "actif",
     },
     {
+        "id": "converter",
+        "label": "Convertisseur de données",
+        "icon": "convert",
+        "group": "Services",
+        "summary": (
+            "Importe GeoJSON, GeoJSONL, CSV/TSV, KML, GPX, WKT et, avec GeoPandas, "
+            "GeoPackage, Shapefile ou GeoParquet. Les données normalisées peuvent être "
+            "prévisualisées, analysées et réexportées dans la plateforme."
+        ),
+        "origin": ["Prototype Godata converter fourni"],
+        "endpoints": ["GET /api/converter/formats", "POST /api/converter/import"],
+        "requires": [],
+        "status": "actif",
+    },
+    {
         "id": "exports",
         "label": "Exports",
         "icon": "download",
         "group": "Services",
         "summary": (
-            "Export unifié de toute couche : GeoJSON, CSV, GeoPackage, Shapefile (ZIP), "
+            "Export unifié de toute couche : GeoJSON, CSV, WKT, KML, GeoPackage, Shapefile (ZIP), "
             "GeoParquet — au lieu d'un exporteur réécrit par projet."
         ),
         "origin": ["pratisig/Openbuildings", "pratisig/Carto-facileSN"],

@@ -352,6 +352,41 @@ réellement obtenue, `missing` liste les composantes absentes.
 
 ---
 
+## Conversion de fichiers et BBox
+
+| Méthode | Endpoint |
+|---|---|
+| `GET` | `/api/converter/formats` |
+| `POST` | `/api/converter/import` |
+
+`/import` reçoit un formulaire `multipart/form-data` avec le champ `file` et,
+optionnellement, `input_format`. Sans ce dernier, l’extension du fichier est
+utilisée. La réponse est une `FeatureCollection` en WGS 84 (`EPSG:4326`) avec
+un résumé dans `metadata`.
+
+| Format d’entrée | Extensions | Dépendance |
+|---|---|---|
+| `geojson` | `.geojson`, `.json` | aucune |
+| `geojsonl` | `.geojsonl`, `.ndjson` | aucune |
+| `csv` | `.csv`, `.tsv` | aucune — longitude/latitude ou WKT |
+| `kml` | `.kml` | aucune |
+| `gpx` | `.gpx` | aucune |
+| `wkt` | `.wkt`, `.txt` | Shapely |
+| `gpkg` | `.gpkg` | GeoPandas |
+| `shapefile` | `.zip` | GeoPandas |
+| `geoparquet` | `.parquet`, `.geoparquet` | GeoPandas |
+
+```bash
+curl -X POST http://localhost:8000/api/converter/import \
+  -F 'file=@mes_donnees.kml'
+```
+
+Dans l’interface, l’onglet **Convertir → Créer une BBox** permet aussi de
+dessiner ou saisir une emprise, de copier ses coordonnées (BBox, JSON,
+Overpass ou WKT) et de la télécharger dans l’un des formats d’export.
+
+---
+
 ## Exports
 
 | Méthode | Endpoint |
@@ -364,6 +399,8 @@ réellement obtenue, `missing` liste les composantes absentes.
 | `geojson` | `.geojson` | aucune |
 | `geojsonl` | `.geojsonl` | aucune |
 | `csv` | `.csv` | aucune (géométrie en WKT) |
+| `wkt` | `.wkt` | aucune |
+| `kml` | `.kml` | aucune |
 | `gpkg` | `.gpkg` | GeoPandas |
 | `shapefile` | `.zip` | GeoPandas |
 | `geoparquet` | `.parquet` | GeoPandas |

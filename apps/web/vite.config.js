@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
+    allowedHosts: ['.e2b.app'],
     port: 5173,
     proxy: {
       // L'API unifiée : un seul point d'entrée, plus d'URLs éparpillées

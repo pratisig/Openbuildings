@@ -71,6 +71,7 @@ export const BASEMAPS = {
 export default function MapView({
   layers,
   rasterTiles,
+  selectedArea,
   basemap,
   onMapReady,
   onFeatureClick,
@@ -217,6 +218,61 @@ export default function MapView({
     else map.current.once('idle', renderLayers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers]);
+
+  // BBox active : elle reste visible après le dessin et les changements de fond.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return undefined;
+    const sourceId = 'pratisig-selected-area';
+    const fillId = `${sourceId}-fill`;
+    const lineId = `${sourceId}-line`;
+
+    function removeSelection() {
+      if (m.getLayer(fillId)) m.removeLayer(fillId);
+      if (m.getLayer(lineId)) m.removeLayer(lineId);
+      if (m.getSource(sourceId)) m.removeSource(sourceId);
+    }
+
+    function renderSelection() {
+      if (!m.isStyleLoaded()) return;
+      if (!selectedArea) {
+        removeSelection();
+        return;
+      }
+      const [west, south, east, north] = selectedArea;
+      const data = {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [west, south], [east, south], [east, north], [west, north], [west, south],
+          ]],
+        },
+      };
+      if (m.getSource(sourceId)) {
+        m.getSource(sourceId).setData(data);
+        return;
+      }
+      m.addSource(sourceId, { type: 'geojson', data });
+      m.addLayer({
+        id: fillId,
+        type: 'fill',
+        source: sourceId,
+        paint: { 'fill-color': '#14b8a6', 'fill-opacity': 0.12 },
+      });
+      m.addLayer({
+        id: lineId,
+        type: 'line',
+        source: sourceId,
+        paint: { 'line-color': '#2dd4bf', 'line-width': 2, 'line-dasharray': [2, 1.5] },
+      });
+    }
+
+    if (m.isStyleLoaded()) renderSelection();
+    else m.once('styledata', renderSelection);
+    return () => m.off('styledata', renderSelection);
+  }, [selectedArea, basemap]);
 
   // Tuiles raster (imagerie satellite Earth Engine)
   useEffect(() => {

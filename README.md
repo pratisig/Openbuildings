@@ -5,7 +5,7 @@
 
 [![API](https://img.shields.io/badge/API-FastAPI-009688)](apps/api)
 [![Front](https://img.shields.io/badge/Interface-React%20%2B%20MapLibre-61dafb)](apps/web)
-[![Tests](https://img.shields.io/badge/tests-196%20passants-14b8a6)](apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-227%20passants-14b8a6)](apps/api/tests)
 [![Validé](https://img.shields.io/badge/valid%C3%A9-20%2F20%20modules-0d9488)](#validation-en-conditions-réelles)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
@@ -90,7 +90,7 @@ Tout est servi sur <http://localhost:8080>, API comprise.
 
 ## Fonctionnalités
 
-14 modules, tous accessibles par API et par l'interface.
+15 modules, tous accessibles par API et par l'interface.
 
 ### Données
 
@@ -197,10 +197,21 @@ rayonnement. Pour la pluie : cumul, jours de pluie, jours de pluie forte.
 
 ### Services
 
+#### Convertisseur de données et BBox
+
+Import de fichiers `geojson`, `geojsonl`, `csv`/TSV, `kml`, `gpx` et `wkt`,
+plus `gpkg`, `shapefile` (ZIP) et `geoparquet` lorsque GeoPandas est installé.
+Les données sont normalisées en GeoJSON WGS 84, prévisualisées sur la carte et
+réutilisables par tous les modules.
+
+Le générateur de BBox permet de dessiner une emprise rectangulaire ou de saisir
+ses quatre bornes. Il fournit les représentations BBox, tableau JSON, Overpass
+et WKT, avec copie, affichage comme couche et téléchargement.
+
 #### Exports
 
-Six formats : `geojson`, `geojsonl`, `csv` (géométrie WKT), `gpkg`,
-`shapefile` (ZIP), `geoparquet`. N'importe quelle couche affichée est
+Huit formats : `geojson`, `geojsonl`, `csv` (géométrie WKT), `wkt`, `kml`,
+`gpkg`, `shapefile` (ZIP), `geoparquet`. N'importe quelle couche affichée est
 exportable.
 
 #### Assistant cartographique *(nécessite une clé LLM)*
@@ -241,7 +252,7 @@ ni redémarrer. Voir [Configuration](#configuration).
 |---|---|
 | Carte | Données, Couches |
 | Étudier | Analyse, Satellite, Agriculture, Foncier |
-| Outils | Assistant |
+| Outils | Convertir, Assistant |
 | *(bas du rail)* | Comptes, Guide |
 
 **Outils de carte** — en haut à gauche :
@@ -420,7 +431,7 @@ Puis, côté Render : `PRATISIG_CORS_ORIGINS = ["https://<votre-front>.vercel.ap
 
 ## Référence API
 
-**55 chemins, 56 opérations.** Documentation interactive sur `/docs`,
+**57 chemins, 58 opérations.** Documentation interactive sur `/docs`,
 schéma sur `/openapi.json`. Référence détaillée : [`docs/API.md`](docs/API.md).
 
 ### La zone d'étude
@@ -516,10 +527,12 @@ alimente directement `buildings`, `flood` ou `raster`.
 </details>
 
 <details>
-<summary><b>Exports, assistant, identifiants</b> (9)</summary>
+<summary><b>Conversion, exports, assistant, identifiants</b> (11)</summary>
 
 | Méthode | Endpoint |
 |---|---|
+| `GET` | `/api/converter/formats` |
+| `POST` | `/api/converter/import` — envoi multipart d’un fichier |
 | `GET` | `/api/exports/formats` |
 | `POST` | `/api/exports/create` |
 | `GET` | `/api/agent/tools` |
@@ -576,9 +589,9 @@ pratisig-platform/
 │   │   │   │   ├── http.py        #   client unique + bascule de miroirs
 │   │   │   │   ├── projection.py  #   UTM automatique
 │   │   │   │   └── schemas.py     #   AreaOfInterest
-│   │   │   ├── modules/           # Un routeur par domaine (14)
+│   │   │   ├── modules/           # Un routeur par domaine (15)
 │   │   │   ├── services/          # GEE, résolution Overture
-│   │   │   └── tests/             # 196 tests
+│   │   │   └── tests/             # 227 tests
 │   └── web/                       # Interface React + MapLibre
 │       └── src/
 │           ├── lib/api.js         # Client API unique
@@ -605,9 +618,9 @@ Décisions techniques détaillées : [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.
 ./scripts/dev.sh check        # tests + lint + build   (Windows : .\scripts\dev.ps1 check)
 ```
 
-196 tests couvrent le socle géométrique, la validation des entrées, les
-opérations spatiales, les exports, la dégradation des services, les calculs
-agronomiques, le scoring foncier, la géométrie des isochrones, la sécurité des
+227 tests couvrent le socle géométrique, la validation des entrées, les
+opérations spatiales, la conversion de fichiers, les exports, la dégradation des
+services, les calculs agronomiques, le scoring foncier, la géométrie des isochrones, la sécurité des
 identifiants et la cohérence de l'interface.
 
 ### Diagnostics
